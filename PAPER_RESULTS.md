@@ -1,8 +1,8 @@
 # FlowAdvantage Paper Results Index
 
-Generated: `2026-07-29T01:00:41.559538+05:30`  
+Generated: `2026-07-29T01:04:14.597159+05:30`  
 Deadline: `2026-07-31 23:59 IST`  
-Hours remaining: **70.97**
+Hours remaining: **70.91**
 
 ## Paper-readiness progress
 
