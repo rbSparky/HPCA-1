@@ -1,0 +1,309 @@
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 06:35:43.169019748 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 08:13:29.929842175 +0000
+@@ -170,6 +170,10 @@
+ 
+ 	void EstablishTemporalLinkage();
+ 	void PrintMappedJSON(string fileName);
++	// FlowAdvantage v1 bridge: exports the actual expanded CGRA state and
++	// current native mapping without changing mapper semantics.
++	bool ExportFlowAdvantageState(const string &directory, DFG *dfg);
++	bool ImportFlowAdvantageMapping(const string &fileName, DFG *dfg, string &error);
+ 	// by Yujie
+ 	void PrintMappingForPillars(string fileName_i, string fileName_r);    
+ 
+@@ -345,6 +349,10 @@
+ 	unordered_map<PE*,PE*> NextCyclePEMap;
+ 	unordered_map<string,int> GlobalOPMinLatencyMap;
+ 	string json_file;
++	// Canonical bridge document retained after a successful external import.
++	// It permits a lossless mapping-document re-export while native placement
++	// and port ownership remain the source of legality validation.
++	string flowadvantage_imported_mapping_json;
+ 
+ 	// unordered_map<PE*,unordered_map<PE*,int>> TimeDistBetweenPEMap;
+ 	// unordered_map<PE*,int> TimeDistBetweenClosestMEMPEMap;
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 06:35:43.169019748 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 07:17:12.698350872 +0000
+@@ -68,6 +68,7 @@
+ 	int getHistoryCost() { return history_cost; }
+ 	int getLat();
+ 	void setLat(int lat);
++	const std::vector<std::tuple<DFGNode*, int, int>>& getMappedNodes() const { return mapped_nodes; }
+ 
+ 	PE* getPE(){return pe;}
+ 
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/util/util.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/util/util.h
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/util/util.h	2026-07-25 06:35:43.183686410 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/util/util.h	2026-07-25 07:19:00.370496874 +0000
+@@ -43,6 +43,8 @@
+ 	int max_hops = 4;  // for HyCUBE
+ 	int mapping_method = 0; // 0: PathFinderMapper, 1: SAMapper (SimulatedAnnealing),  HeuristicMapper will not be used
+ 	int max_II = 32;
++	std::string dump_flowadvantage_state = "";
++	std::string load_flowadvantage_mapping = "";
+ 	std::string arch_name = "";
+ 	lisa_arguments lisa_arg;
+ };
+@@ -140,6 +142,8 @@
+ 		.add_option<std::string>("", "--arch_name", "architecture name", "")
+ 		.add_option<bool>("", "--lisa_training", "lisa training", false)
+ 		.add_option<std::string>("", "--dfg_id", "the dfg id used to generate training data", "none")
++		.add_option<std::string>("", "--dump-flowadvantage-state", "export native DFG/MRRG/mapping JSON", "")
++		.add_option<std::string>("", "--load-flowadvantage-mapping", "import FlowAdvantage mapping JSON", "")
+         .parse(argn, argc);
+ 
+ 	ret.dfg_filename = args.get_option<std::string>("--dfg");
+@@ -161,6 +165,8 @@
+ 	lisa_arg.training = args.get_option<bool>("--lisa_training");
+ 	lisa_arg.dfg_id = args.get_option<std::string>("--dfg_id");
+ 	ret.lisa_arg = lisa_arg;
++	ret.dump_flowadvantage_state = args.get_option<std::string>("--dump-flowadvantage-state");
++	ret.load_flowadvantage_mapping = args.get_option<std::string>("--load-flowadvantage-mapping");
+ 	assert(ret.dfg_filename!= "");
+ 	assert(ret.json_file_name!= "");
+ 	args.print_as_ini(std::cout);
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 06:35:43.198353068 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 08:16:18.029291488 +0000
+@@ -123,6 +123,34 @@
+ 	// exit(EXIT_SUCCESS);
+ 
+ 	auto start = chrono::steady_clock::now();
++	// External mappings are loaded into a freshly expanded native MRRG.  Do not
++	// run a mapper first: that would hide importer defects behind a preexisting
++	// native placement/route state.  The caller must provide the mapping II via
++	// -i so construction is unambiguous without parsing an undocumented format.
++	if (!args.load_flowadvantage_mapping.empty()) {
++		if (initUserII <= 0) {
++			std::cerr << "FlowAdvantage import requires explicit -i matching mapping II\n";
++			return 3;
++		}
++		DFG externalDFG;
++		externalDFG.parseXML(inputDFG_filename);
++		CGRA *externalCGRA;
++		if (json_file_name.empty()) externalCGRA = new CGRA(NULL, "coreCGRA", initUserII, ydim, xdim, &externalDFG, PEType, numberOfDPs, mapper->getcongestedPortsPtr());
++		else externalCGRA = new CGRA(json_file_name, initUserII, xdim, ydim, mapper->getcongestedPortsPtr());
++		std::string import_error;
++		bool imported = externalCGRA->ImportFlowAdvantageMapping(args.load_flowadvantage_mapping, &externalDFG, import_error);
++		std::cout << "FlowAdvantage import " << (imported ? "PASS" : "FAIL") << " : " << import_error << "\n";
++		if (!imported) return 3;
++		mapper->cgra = externalCGRA;
++		mapper->dfg = &externalDFG;
++		if (PEType == "HyCUBE_4REG") {
++			std::cout << "Printing HyCUBE Binary from imported mapping...\n";
++			mapper->printHyCUBEBinary(externalCGRA);
++		}
++		// Export the reconstructed native state for semantic round-trip comparison.
++		if (!args.dump_flowadvantage_state.empty()) externalCGRA->ExportFlowAdvantageState(args.dump_flowadvantage_state, &externalDFG);
++		return 0;
++	}
+ 
+ 	bool mappingSuccess = false;
+ 	while (!mappingSuccess)
+@@ -202,12 +230,19 @@
+ 		else
+ 		{
+ 			std::cout << "Map Success with II = "<< II <<"!!!\n";
++			bool external_mapping_loaded = false;
++			if (!args.dump_flowadvantage_state.empty()) {
++				if (!tempCGRA->ExportFlowAdvantageState(args.dump_flowadvantage_state, &tempDFG))
++					std::cerr << "FlowAdvantage export failed\n";
++				else std::cout << "FlowAdvantage state exported to " << args.dump_flowadvantage_state << "\n";
++			}
++			// --load-flowadvantage-mapping returns before the mapper loop above.
+ 			if(mapping_method  == 2){
+ 				break;
+ 			}
+-			mapper->sanityCheck();
++			if (!external_mapping_loaded) mapper->sanityCheck();
+ 			//mapper.assignLiveInOutAddr(&tempDFG);
+-			if(PEType == "HyCUBE_4REG"){
++			if(PEType == "HyCUBE_4REG" && !external_mapping_loaded){
+ 				std::cout << "\nPrinting HyCUBE Binary...\n";
+ 				mapper->printHyCUBEBinary(tempCGRA);
+ 			}
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CMakeLists.txt results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CMakeLists.txt
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CMakeLists.txt	2026-07-25 06:35:43.198353068 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CMakeLists.txt	2026-07-25 07:31:31.099858468 +0000
+@@ -3,6 +3,10 @@
+ 
+ FILE(GLOB_RECURSE MyCPPSources *.cpp)
+ FILE(GLOB_RECURSE MyHSources *.h)
++# QuickMapper belongs to a newer incomplete interface in this recorded
++# submodule revision and is not linked by the native Morpher CLI. Excluding it
++# restores the documented PathFinder/SA/LISA build without changing them.
++list(FILTER MyCPPSources EXCLUDE REGEX ".*/mapper/QuickMapper\\.cpp$")
+ 
+ set(PROJ "cgra_xml_mapper")
+ 
+@@ -24,4 +28,3 @@
+ target_compile_features(${PROJ} PRIVATE cxx_std_17 )
+ #target_link_libraries(${PROJ} nlohmann_json::nlohmann_json)
+ 
+-
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 06:35:43.198353068 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 08:24:54.421807933 +0000
+@@ -6,6 +6,14 @@
+  */
+ 
+ #include <morpher/arch/CGRA.h>
++#include <morpher/dfg/DFG.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <fstream>
++#include <sstream>
++#include <iomanip>
++#include <queue>
++#include <algorithm>
+ #include <morpher/arch/PE.h>
+ #include <morpher/arch/Port.h>
+ #include <iostream>
+@@ -1239,6 +1247,145 @@
+ 	outFile.close();
+ }
+ 
++static string fa_hash_text(const string &s) {
++	// Stable FNV-1a fingerprint.  This is intentionally deterministic across
++	// processes (unlike an implementation-defined std::hash) and is used only
++	// as an interchange compatibility guard, not for cryptographic security.
++	uint64_t h = 1469598103934665603ULL;
++	for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
++	stringstream ss; ss << hex << h; return ss.str();
++}
++
++static string fa_file_text(const string &file) {
++	ifstream in(file.c_str(), ios::binary); stringstream ss; ss << in.rdbuf(); return ss.str();
++}
++
++static string fa_dfg_signature(DFG *dfg) {
++	stringstream ss;
++	if (!dfg) return "missing";
++	for (DFGNode &n : dfg->nodeList) {
++		ss << n.idx << ":" << n.op << ":" << n.ASAP << ":" << n.ALAP << ":" << n.hasConst << ";";
++		for (DFGNode *p : n.parents) ss << p->idx << ">" << n.idx << ":" << (p->childNextIter.count(&n) ? p->childNextIter[&n] : 0) << ";";
++	}
++	return ss.str();
++}
++
++static void fa_mkdir(const string &d) { mkdir(d.c_str(), 0755); }
++
++static void fa_collect_modules(Module *m, vector<Module*> &out) {
++	out.push_back(m);
++	for (Module *s : m->subModules) fa_collect_modules(s, out);
++}
++
++static void fa_collect_datapaths(Module *m, vector<DataPath*> &out) {
++	if (DataPath *dp = dynamic_cast<DataPath*>(m)) out.push_back(dp);
++	for (Module *s : m->subModules) fa_collect_datapaths(s, out);
++}
++
++static bool fa_carries(Port *p, DFGNode *node, int destination) {
++	for (auto const &r : p->getMappedNodes())
++		if (std::get<0>(r) == node && std::get<1>(r) == destination) return true;
++	return false;
++}
++
++bool CGRAXMLCompile::CGRA::ExportFlowAdvantageState(const string &directory, DFG *dfg) {
++	fa_mkdir(directory);
++	json dfgj, mrrgj, mapj;
++	dfgj["schema"] = "flowadvantage_morpher_dfg_v1";
++	dfgj["ii"] = get_t_max();
++	dfgj["dfg_hash"] = fa_hash_text(fa_dfg_signature(dfg));
++	if (dfg) {
++		for (DFGNode &n : dfg->nodeList) {
++			json x; x["dfg_node_id"] = n.idx; x["opcode"] = n.op; x["latency"] = n.rootDP ? n.rootDP->getLat() : 0;
++			x["asap"] = n.ASAP; x["alap"] = n.ALAP; x["has_constant"] = n.hasConst; x["constant"] = n.constant; x["bb"] = n.BB;
++			for (DFGNode *p : n.parents) { json e; e["source_node"] = p->idx; e["destination_node"] = n.idx; e["iteration_distance"] = p->childNextIter.count(&n) ? p->childNextIter[&n] : 0; e["edge_type"] = "data"; e["source_latency"] = p->rootDP ? p->rootDP->getLat() : 0; e["required_time_difference"] = n.ASAP-p->ASAP; dfgj["dependencies"].push_back(e); }
++			dfgj["nodes"].push_back(x);
++		}
++	}
++	mrrgj["schema"] = "flowadvantage_morpher_mrrg_v1"; mrrgj["ii"] = get_t_max();
++	mrrgj["architecture_hash"] = fa_hash_text(fa_file_text(json_file) + ":" + to_string(get_x_max()) + ":" + to_string(get_y_max()) + ":" + to_string(get_t_max()));
++	mapj["schema"] = "flowadvantage_morpher_mapping_v1"; mapj["toolchain_commit"] = "9a9dce7aea521f1d5ef33686f57ca84864edb3c9"; mapj["ii"] = get_t_max(); mapj["architecture_hash"] = mrrgj["architecture_hash"]; mapj["dfg_hash"] = dfgj["dfg_hash"]; mapj["dependencies"] = dfgj["dependencies"]; mapj["resources"] = mrrgj["resources"]; mapj["memory_bindings"] = json::array(); mapj["metadata"] = json::object();
++	bool reexport_imported = !flowadvantage_imported_mapping_json.empty();
++	if (reexport_imported) {
++		try { mapj = json::parse(flowadvantage_imported_mapping_json); }
++		catch (...) { return false; }
++	}
++	vector<Module*> mods; mods.push_back(this);
++	for (PE *pe : getAllPEList()) fa_collect_modules(pe, mods);
++	for (Module *m : mods) {
++		json r; r["native_resource_id"] = m->getFullName(); r["resource_type"] = m->get_type(); r["time_slot"] = m->get_t(); r["capacity"] = 1;
++		if (PE *pe = dynamic_cast<PE*>(m)) { r["x"] = pe->X; r["y"] = pe->Y; }
++		if (FU *fu = dynamic_cast<FU*>(m)) { for (auto &op : fu->supportedOPs) r["supported_operations"].push_back(op.first); r["memory_role"] = fu->isMEMFU() ? "memory" : "compute"; }
++		mrrgj["resources"].push_back(r);
++		for (auto &kv : m->getconnectedTo()) {
++			json sr; sr["native_resource_id"] = kv.first->getFullName(); sr["resource_type"] = "port"; sr["port_type"] = (int)kv.first->getType(); sr["time_slot"] = kv.first->getMod()->get_t();
++			if (PE *pe = kv.first->findParentPE()) { sr["x"] = pe->X; sr["y"] = pe->Y; }
++			mrrgj["resources"].push_back(sr);
++			for (Port *dst : kv.second) { json e; e["src"] = kv.first->getFullName(); e["dst"] = dst->getFullName(); e["capacity"] = 1; mrrgj["edges"].push_back(e); }
++		}
++	}
++	if (!reexport_imported) mapj["resources"] = mrrgj["resources"];
++	for (Module *sm : mods) if (!reexport_imported) if (DataPath *dp = dynamic_cast<DataPath*>(sm)) {
++		if (!dp->getMappedNode()) continue;
++		PE *pe = dp->getPE(); FU *fu = dp->getFU(); DFGNode *n = dp->getMappedNode(); json o; o["dfg_node_id"] = n->idx; o["opcode"] = n->op; o["capabilities"] = json::array(); o["pe_id"] = pe->getFullName(); o["pe_x"] = pe->X; o["pe_y"] = pe->Y; o["fu_id"] = fu->getFullName(); o["modulo_time"] = pe->T; o["absolute_schedule_if_available"] = nullptr; o["latency"] = dp->getLat(); o["asap"] = n->ASAP; o["alap"] = n->ALAP; o["fixed_or_flexible"] = "native_fixed"; mapj["operations"].push_back(o);
++	}
++	// Recover ordered native port sequences for every mapped DFG dependency.
++	// The mapper stores signal ownership in Port::mapped_nodes and graph
++	// topology in Module::connectedTo; exporting both preserves native IDs.
++	if (!reexport_imported && dfg) for (DFGNode &src : dfg->nodeList) for (DFGNode *dstnode : src.children) {
++		if (!src.rootDP || !dstnode->rootDP) continue;
++		Port *start = src.rootDP->getOutputDP()->getOutPort("T");
++		map<Port*, vector<Port*> > adj;
++		for (Module *m : mods) for (auto &kv : m->getconnectedTo()) if (fa_carries(kv.first, &src, dstnode->idx))
++			for (Port *q : kv.second) if (fa_carries(q, &src, dstnode->idx)) adj[kv.first].push_back(q);
++		queue<Port*> q; map<Port*,Port*> prev; q.push(start); prev[start] = NULL; Port *goal = NULL;
++		while (!q.empty() && !goal) { Port *p=q.front(); q.pop(); if (p->getMod()==dstnode->rootDP) { goal=p; break; } for (Port *nxt:adj[p]) if (!prev.count(nxt)) {prev[nxt]=p; q.push(nxt);} }
++		json rr; rr["edge_id"] = to_string(src.idx) + ":" + to_string(dstnode->idx); rr["source_node"] = src.idx; rr["destination_node"] = dstnode->idx; rr["start_time"] = start->getLat();
++		if (!goal) { rr["export_status"]="route_sequence_unavailable"; mapj["routes"].push_back(rr); continue; }
++		vector<Port*> path; for (Port *p=goal; p; p=prev[p]) path.push_back(p); reverse(path.begin(),path.end());
++		for (size_t k=0;k<path.size();++k) { rr["ordered_resource_ids"].push_back(path[k]->getFullName()); rr["ordered_resource_latencies"].push_back(path[k]->getLat()); if(k+1<path.size()) rr["ordered_link_ids"].push_back(path[k]->getFullName()+"->"+path[k+1]->getFullName()); }
++		rr["end_time"] = goal->getLat(); rr["export_status"]="ok"; mapj["routes"].push_back(rr);
++	}
++	dfgj["metadata"]["native_source"] = "DFG::nodeList"; mrrgj["metadata"]["native_source"] = "CGRA::subModules/getconnectedTo"; mapj["metadata"]["native_source"] = "DataPath::mappedNode + DFGNode::routingPorts";
++	ofstream a(directory + "/dfg.json"), b(directory + "/mrrg.json"), c(directory + "/mapping.json"); if (!a || !b || !c) return false; a << setw(2) << dfgj << endl; b << setw(2) << mrrgj << endl; c << setw(2) << mapj << endl; return true;
++}
++
++bool CGRAXMLCompile::CGRA::ImportFlowAdvantageMapping(const string &fileName, DFG *dfg, string &error) {
++	ifstream in(fileName); if (!in) { error = "mapping_file_unreadable"; return false; }
++	json m; try { in >> m; } catch (...) { error = "mapping_json_invalid"; return false; }
++	if (m.value("schema", "") != "flowadvantage_morpher_mapping_v1") { error = "schema_mismatch"; return false; }
++	if (m.value("ii", -1) != get_t_max()) { error = "II mismatch"; return false; }
++	if (!dfg) { error = "DFG missing"; return false; }
++	if (m.value("dfg_hash", "") != fa_hash_text(fa_dfg_signature(dfg))) { error = "DFG-hash mismatch"; return false; }
++	if (m.value("architecture_hash", "") != fa_hash_text(fa_file_text(json_file) + ":" + to_string(get_x_max()) + ":" + to_string(get_y_max()) + ":" + to_string(get_t_max()))) { error = "architecture-hash mismatch"; return false; }
++	for (DFGNode &n : dfg->nodeList) if (n.rootDP) n.clear(dfg);
++	for (auto &o : m.value("operations", json::array())) {
++		int id = o.value("dfg_node_id", -1); DFGNode *n = dfg->findNode(id); if (!n) { error = "unknown DFG node"; return false; }
++		string peid = o.value("pe_id", ""); PE *target = NULL; for (PE *pe : getAllPEList()) if (pe->getFullName() == peid) { target = pe; break; }
++		if (!target) { error = "unknown MRRG resource"; return false; }
++		if (target->T != o.value("modulo_time", target->T)) { error = "timing violation"; return false; }
++		bool assigned = false; vector<DataPath*> dps; fa_collect_datapaths(target, dps); for (DataPath *dp : dps) { FU *fu = dp->getFU(); if (fu->supportedOPs.count(n->op) && !dp->getMappedNode()) { dp->assignNode(n, target->T, dfg); assigned = true; break; } }
++		if (!assigned) { error = "unsupported operation or duplicate compute occupancy"; return false; }
++	}
++	for (auto &r : m.value("routes", json::array())) {
++		if (r.value("export_status", "ok") != "ok") { error = "non_contiguous_route"; return false; }
++		auto ids = r.value("ordered_resource_ids", json::array()); if (ids.empty()) { error = "wrong route endpoints"; return false; }
++		int srcid=r.value("source_node",-1), dstid=r.value("destination_node",-1); DFGNode *src=dfg->findNode(srcid); DFGNode *dst=dfg->findNode(dstid); if(!src||!dst) {error="unknown DFG node";return false;}
++		vector<Port*> ports; for (auto &id:ids) { Port *found=NULL; for (PE *pe:getAllPEList()) { vector<Module*> pm; fa_collect_modules(pe,pm); for(Module *mm:pm) { for(auto &kv:mm->getconnectedTo()) if(kv.first->getFullName()==id.get<string>()) found=kv.first; for(auto &kv:mm->getconnectedTo()) for(Port *pp:kv.second) if(pp->getFullName()==id.get<string>()) found=pp; } } if(!found){error="unknown MRRG resource";return false;} ports.push_back(found); }
++		for(size_t i=0;i+1<ports.size();++i) { bool linked=false; for(Port *nxt:ports[i]->getMod()->getNextPorts(ports[i])) if(nxt==ports[i+1]) linked=true; if(!linked){error="non-contiguous route";return false;} }
++		auto lats=r.value("ordered_resource_latencies", json::array());
++		if (lats.size()!=ports.size()) { error="route_latency_missing"; return false; }
++		// This uses the native Port state mutator without a mapper pointer, so it
++		// restores mapping ownership while deliberately not altering PathFinder's
++		// private congestion history.  It is sufficient for native structural
++		// checks and configuration generation on a conflict-free exported route.
++		for(size_t i=0;i<ports.size();++i) ports[i]->setNode(src, lats[i].get<int>(), dstid, NULL);
++		src->routingPorts.push_back(make_pair(ports.back(),dstid));
++	}
++	flowadvantage_imported_mapping_json = m.dump();
++	return true;
++}
++
+ // by Yujie
+ void CGRAXMLCompile::CGRA::PrintMappingForPillars(string fileName_i, string fileName_r){
+ 	DataPrepare();

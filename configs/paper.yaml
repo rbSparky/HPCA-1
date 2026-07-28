@@ -1,0 +1,10 @@
+# Expansion placeholder. The quick-suite decision must be reviewed before use.
+experiment:
+  name: quotientflow_paper_future
+  master_seed: 24072026
+  enabled: false
+requirements:
+  real_toolchain: Morpher-v2
+  minimum_real_kernels: 30
+  minimum_architectures: 12
+  learned_seeds: 5

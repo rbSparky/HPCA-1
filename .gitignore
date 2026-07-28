@@ -1,0 +1,29 @@
+# Python and editor state
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.mamba/
+.remote_jobs/
+.cluster_runs/
+
+# Platform metadata and generated handoffs
+*.Zone.Identifier
+*:Zone.Identifier
+*.zip
+*.sha256
+
+# Generated experiment data, caches, logs, and checkpoints. These are tracked
+# through immutable manifests and published handoff archives, not Git blobs.
+results/**
+!results/revision_v5b/
+results/revision_v5b/**
+!results/revision_v5b/morpher_patch/
+!results/revision_v5b/morpher_patch/flowadvantage_bridge.patch
+!results/revision_v5b/morpher_patch/PATCH_MANIFEST.md
+!results/revision_v5b/morpher_patch/Dockerfile
+
+# Remote artifacts are fetched explicitly with tools/cluster_queue.sh.
+results/remote_runs/

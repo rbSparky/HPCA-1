@@ -1,0 +1,58 @@
+experiment:
+  name: quotientflow_quick_v1
+  master_seed: 24072026
+  wall_clock_budget_minutes: 55
+  hard_stop_minutes: 70
+  cpu_threads: 6
+  output_dir: results/quick_v1
+  cache_dir: results/cache
+  deterministic_torch: true
+model:
+  hidden_dim: 64
+  dfg_layers: 3
+  arch_layers: 3
+  head_layers: 2
+  dropout: 0.0
+  epochs: 60
+  early_stop_patience: 8
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  seeds: [11, 23, 37]
+  batch_size: 8
+  loss_mse_weight: 1.0
+  loss_rank_weight: 0.25
+  loss_critical_weight: 0.5
+relaxation:
+  tau: 0.001
+  solver_primary: CLARABEL
+  solver_fallback: OSQP
+  primal_tolerance: 0.0001
+  active_tolerance: 0.001
+  max_solve_seconds: 8.0
+architecture:
+  ii: 3
+  link_capacity: 1.0
+  compute_capacity: 1.0
+  include_wait_edges: true
+data:
+  train_per_family_per_arch: 8
+  val_per_family_per_arch: 2
+  test_seen_per_family_per_arch: 2
+  test_per_family_unseen_arch: 4
+  partial_depth_fractions: [0.10, 0.25, 0.40]
+  min_ops: 8
+  max_ops: 16
+mapper:
+  beam_width: 32
+  per_state_action_limit: 6
+  k_paths: 4
+  max_expansions: 5000
+  timeout_seconds_per_instance: 120.0
+  price_weight: 2.0
+  occupancy_penalty: 1000.0
+  canonicalize_routes: true
+evaluation:
+  probe_instances: 28
+  knockout_links_per_instance: 16
+  mapping_instances_per_split: 14
+  exhaustive_symmetry_instances: 12
