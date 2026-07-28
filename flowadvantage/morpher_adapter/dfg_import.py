@@ -37,21 +37,43 @@ def import_native_dfg(path):
     if payload.get("schema") != "flowadvantage_morpher_dfg_v1":
         raise ValueError(f"unsupported native DFG schema: {payload.get('schema')!r}")
     nodes = {}
+    node_keys = {}
     for node in payload.get("nodes", []):
         node_id = node.get("dfg_node_id")
-        if not isinstance(node_id, int) or node_id in nodes:
-            raise ValueError(f"invalid or duplicate DFG node ID: {node_id!r}")
         record = dict(node)
+        key = record.get("native_node_key")
+        if not isinstance(node_id, int):
+            raise ValueError(f"invalid DFG node ID: {node_id!r}")
+        if key is None:
+            # Legacy dumps are accepted only when numeric IDs are unique.  A
+            # duplicate legacy ID is semantically ambiguous and must not be
+            # guessed.
+            if node_id in nodes:
+                raise ValueError(f"duplicate DFG node ID without native key: {node_id!r}")
+            key = str(node_id)
+        if key in node_keys:
+            raise ValueError(f"duplicate native DFG node key: {key!r}")
         record["operation"] = translate_operation(record.get("opcode", ""))
-        nodes[node_id] = record
+        record["native_node_key"] = key
+        node_keys[key] = record
+        # Preserve numeric IDs for compatibility, but use a key-qualified
+        # dictionary when native IDs are duplicated.
+        nodes.setdefault(node_id, record)
     edges = []
     for edge in payload.get("dependencies", []):
-        source, destination = edge.get("source_node"), edge.get("destination_node")
-        if source not in nodes or destination not in nodes:
+        source_key = edge.get("source_node_key")
+        destination_key = edge.get("destination_node_key")
+        source = edge.get("source_node")
+        destination = edge.get("destination_node")
+        source_record = node_keys.get(source_key) if source_key is not None else nodes.get(source)
+        destination_record = node_keys.get(destination_key) if destination_key is not None else nodes.get(destination)
+        if source_record is None or destination_record is None:
             raise ValueError(f"dependency references unknown node: {source!r}->{destination!r}")
         edges.append({
             "src": source,
             "dst": destination,
+            "src_key": source_record["native_node_key"],
+            "dst_key": destination_record["native_node_key"],
             "distance": int(edge.get("iteration_distance", 0)),
             "type": edge.get("edge_type", "data"),
             "source_latency": edge.get("source_latency"),
