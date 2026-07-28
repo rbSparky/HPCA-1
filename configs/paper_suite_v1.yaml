@@ -1,0 +1,56 @@
+experiment:
+  name: flowadvantage_paper_suite_v1
+  master_seed: 24072026
+  deadline_ist: '2026-07-31T23:59:00+05:30'
+  progress_policy: claim_critical_weighted
+  output_dir: results/paper_suite_v1
+  source_repo: https://github.com/rbSparky/HPCA-1
+  branch: agent/paper-suite-bootstrap
+  source_commit: 247614c
+  workers_cpu: 8
+  gpu_device: 0
+  deterministic: true
+
+toolchain:
+  morpher_commit: 9a9dce7aea521f1d5ef33686f57ca84864edb3c9
+  docker_image: quotientflow-morpher-v5b-native
+  adapter_schema: flowadvantage_morpher_mapping_v1
+  native_dfg_schema: flowadvantage_morpher_dfg_v1
+  native_mrrg_schema: flowadvantage_morpher_mrrg_v1
+
+architectures:
+  - {id: A0_hycube4x4, role: standard}
+  - {id: A1_stdnoc4x4, role: richer_interconnect}
+  - {id: A2_hycube4x4_mem_variant, role: constrained_memory}
+  - {id: A3_hycube8x8, role: held_out_size}
+
+kernels:
+  primary: [array_add, array_cond, hpcg, trmm, gemm_nt, fix_fft, fir, conv2, conv3, mac, matrixmultiply, dct]
+  fallback: [adpcm_coder, aes_encrypt, dwt, pedometer]
+  unsupported_compute_fraction_max: 0.10
+
+methods:
+  deterministic: [pathfinder, dual_linear, flow_proposal, flow_top4, flow_noparent_top4]
+  stochastic: [simulated_annealing]
+  stochastic_seeds: [11, 23, 37]
+  full_relaxed_subset: [array_add, gemm_nt, fix_fft]
+
+budgets:
+  standard_seconds: [30, 120, 600]
+  full_relaxed_seconds: 3600
+  per_ii_seconds: 120
+  ii_search_delta: 4
+
+statistics:
+  bootstrap_resamples: 10000
+  bootstrap_seed: 24072026
+  borderline_relative_window: 0.05
+
+progress_weights:
+  adapter_functional_correctness: 0.20
+  principal_matrix: 0.35
+  conventional_baselines: 0.10
+  lookahead_and_parent_ablations: 0.10
+  portability_and_scaling: 0.10
+  runtime_and_statistics: 0.05
+  artifacts_and_reporting: 0.10
