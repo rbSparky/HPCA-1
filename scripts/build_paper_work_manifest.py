@@ -118,8 +118,9 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
                 "reference_mapping_path": str(witness.resolve()), "dfg_hash": sha256_file(dfg),
                 "architecture_hash": sha256_file(mrrg), "reference_mapping_hash": sha256_file(witness),
                 "anchor_operations": anchor, "checkpoint_path": str(checkpoint),
-                # This worker mode starts from a deterministic witness prefix;
-                # it is not a full root-to-complete mapping experiment.
+                # The complete algorithm starts at the empty state, constructs
+                # a frozen deterministic length prefix, then applies the
+                # selected completion policy.
                 "evaluation_mode": "deterministic_length_prefix_then_complete",
                 "anchor_depth_fraction": anchor / max(1, len(dfg_doc.get("nodes", []))),
                 "initialization_policy": "deterministic_length_prefix",
@@ -145,7 +146,7 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
             jobs.append(row)
     jobs.sort(key=lambda r: (r["architecture"], r["kernel"], r["method"]))
     jobs_path = out / "jobs.json"; jobs_path.write_text(json.dumps({"jobs": jobs}, indent=2) + "\n")
-    metadata = {"schema": "flowadvantage_paper_manifest_v2", "frozen": True, "source_commit": source_commit, "source_tree_hash": source_hash, "jobs": len(jobs), "blockers": blockers, "selected": {f"{k[0]}/{k[1]}": str(v) for k,v in refs.items()}, "unsupported_methods": ["native_pathfinder", "simulated_annealing", "flow_noparent_top4"], "launch": args.launch, "evaluation_mode": "deterministic_length_prefix_then_complete", "initialization_policy": "deterministic_length_prefix", "initialization_depth_fraction": 0.40, "full_end_to_end": True, "protocol_note": "the native witness is latency metadata only; placements/routes are built from the empty state by the frozen deterministic length prefix"}
+    metadata = {"schema": "flowadvantage_paper_manifest_v2", "frozen": True, "source_commit": source_commit, "source_tree_hash": source_hash, "jobs": len(jobs), "blockers": blockers, "selected": {f"{k[0]}/{k[1]}": str(v) for k,v in refs.items()}, "unsupported_methods": ["native_pathfinder", "simulated_annealing", "flow_noparent_top4"], "launch": args.launch, "evaluation_mode": "deterministic_length_prefix_then_complete", "initialization_policy": "deterministic_length_prefix", "initialization_depth_fraction": 0.40, "full_end_to_end": True, "protocol_note": "current MRRGs provide native FU latencies; the witness is provenance only, while all placements/routes are built from the empty state by the frozen deterministic length prefix"}
     (out / "manifest_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     return jobs_path, out / "manifest_metadata.json"
 

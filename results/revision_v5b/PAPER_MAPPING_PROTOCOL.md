@@ -1,9 +1,10 @@
 # Native paper-mapping partial-state protocol
 
-Executable paper jobs use a two-stage deterministic protocol. The native
-reference mapping is read only to supply operation-latency metadata when the
-export lacks a complete FU latency table; no reference placement, route,
-occupancy, or score is copied into the search state.
+Executable paper jobs use a two-stage deterministic protocol. Current native
+MRRG exports carry complete per-FU operation-latency tables. The reference
+mapping is hash-verified as corpus provenance but is not passed into the
+mapping problem and supplies no latency, placement, route, occupancy, or score.
+Contracts lacking the native latency table fail closed.
 
 1. Start from an empty `NativeMappingState`.
 2. Run the same deterministic beam mapper with `LengthActionScorer` and the

@@ -320,9 +320,10 @@ def _native_search(
     artifact_directory: Path,
     progress: dict[str, Any],
 ) -> dict[str, Any]:
-    # The Python mapper consumes the exact native DFG/MRRG dump.  A reference
-    # mapping is required only for legacy dumps whose FU latency metadata is
-    # absent; it is a witness, never a score or a mapping oracle.
+    # The Python mapper consumes the exact native DFG/MRRG dump.  Current
+    # paper contracts carry the native per-FU operation-latency table, so the
+    # reference mapping is verified for corpus provenance but is never passed
+    # into the mapping problem or read for placement/routing semantics.
     dfg = json.loads(dfg_path.read_text(encoding="utf-8"))
     mrrg = json.loads(architecture_path.read_text(encoding="utf-8"))
     witness_path = Path(spec.get("reference_mapping_path", ""))
@@ -347,12 +348,11 @@ def _native_search(
     )
     from flowadvantage.morpher_adapter.legality_bridge import validate_mapping
 
-    problem = NativeMorpherProblem(dfg, mrrg, reference_mapping=witness)
+    problem = NativeMorpherProblem(dfg, mrrg)
 
     # Parent relaxations require a valid non-root state.  Construct that state
-    # from the empty mapping with the deterministic length beam; the native
-    # witness is used only as latency metadata by NativeMorpherProblem and is
-    # never read for placements, routes, or occupancy.
+    # from the empty mapping with the deterministic length beam.  The native
+    # witness is not read for placements, routes, occupancy, or latencies.
     initialization_policy = str(
         spec.get("initialization_policy", "deterministic_length_prefix")
     )
@@ -524,6 +524,18 @@ def _native_search(
     )
     result = mapper.map(initial_state=initial_state)
     elapsed = time.monotonic() - started
+    total_elapsed = initialization_seconds + elapsed
+    prefix_metrics = prefix_result.metrics
+    combined_stage_seconds = {
+        **{
+            f"initialization_{key}": float(value)
+            for key, value in prefix_metrics.stage_seconds.items()
+        },
+        **{
+            f"completion_{key}": float(value)
+            for key, value in result.metrics.stage_seconds.items()
+        },
+    }
     payload = {
         "status": "DONE" if result.metrics.success else "VALID_MAPPING_FAILURE",
         "legal": result.metrics.legal,
@@ -540,12 +552,20 @@ def _native_search(
         "mapped_operations": result.metrics.mapped_operations,
         "operation_count": result.metrics.total_operations,
         "route_cost": result.metrics.route_cost,
-        "expansions": result.metrics.expansions,
-        "generated_actions": result.metrics.generated_actions,
+        "expansions": prefix_metrics.expansions + result.metrics.expansions,
+        "generated_actions": (
+            prefix_metrics.generated_actions + result.metrics.generated_actions
+        ),
         "routing_attempts": (
+            prefix_metrics.routed_actions
+            + prefix_metrics.failed_targets
+            + result.metrics.routed_actions
+            + result.metrics.failed_targets
+        ),
+        "completion_routing_attempts": (
             result.metrics.routed_actions + result.metrics.failed_targets
         ),
-        "compile_wall_seconds": elapsed,
+        "compile_wall_seconds": total_elapsed,
         "feature_seconds": 0.0,
         "proposal_seconds": 0.0,
         "relaxation_seconds": 0.0,
@@ -556,7 +576,7 @@ def _native_search(
         "initialization_expansions": prefix_result.metrics.expansions,
         "initialization_generated_actions": prefix_result.metrics.generated_actions,
         "initialization_routing_attempts": prefix_result.metrics.routed_actions + prefix_result.metrics.failed_targets,
-        "stage_seconds": dict(getattr(result.metrics, "stage_seconds", {})),
+        "stage_seconds": combined_stage_seconds,
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(
             getattr(parent_provider, "cache_hits", 0)
