@@ -401,6 +401,7 @@ def _native_search(
             f"{prefix_result.metrics.termination}"
         )
     initial_state = prefix_result.state
+    initial_frontier = prefix_result.frontier
     initialization_seconds = time.monotonic() - prefix_started
 
     from flowadvantage.morpher_adapter.native_relaxation import (
@@ -503,6 +504,8 @@ def _native_search(
                 ),
                 "cache_hits": int(getattr(solver, "cache_hits", 0)),
                 "cache_misses": int(getattr(solver, "cache_misses", 0)),
+                "scorer_rejected_states": event.scorer_rejected_states,
+                "scorer_rejection_reasons": event.scorer_rejection_reasons,
             }
         )
 
@@ -522,7 +525,7 @@ def _native_search(
         ),
         progress_callback=callback,
     )
-    result = mapper.map(initial_state=initial_state)
+    result = mapper.map(initial_frontier=initial_frontier)
     elapsed = time.monotonic() - started
     total_elapsed = initialization_seconds + elapsed
     prefix_metrics = prefix_result.metrics
@@ -576,6 +579,9 @@ def _native_search(
         "initialization_expansions": prefix_result.metrics.expansions,
         "initialization_generated_actions": prefix_result.metrics.generated_actions,
         "initialization_routing_attempts": prefix_result.metrics.routed_actions + prefix_result.metrics.failed_targets,
+        "initialization_frontier_size": len(initial_frontier),
+        "scorer_rejected_states": result.metrics.scorer_rejected_states,
+        "scorer_rejection_reasons": result.metrics.scorer_rejection_reasons,
         "stage_seconds": combined_stage_seconds,
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(

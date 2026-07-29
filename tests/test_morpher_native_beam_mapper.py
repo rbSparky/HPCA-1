@@ -14,6 +14,7 @@ from flowadvantage.morpher_adapter.native_beam_mapper import (
     NativeActionScorer,
     ScheduleHorizon,
     TopKExactRerankScorer,
+    ScorerStateUnavailable,
 )
 from flowadvantage.morpher_adapter.native_mapper import (
     NativeMappingState,
@@ -178,6 +179,87 @@ def test_deterministic_length_prefix_is_empty_state_and_witness_independent(fixe
     assert first.mapping is not None
     assert first.state.stable_key() == second.state.stable_key()
     assert first.mapping == second.mapping
+
+
+def test_partial_frontier_is_preserved_for_continuation(fixed17):
+    problem, _ = fixed17
+    prefix = DeterministicNativeBeamMapper(
+        problem,
+        scorer=LengthActionScorer(),
+        config=NativeBeamConfig(
+            beam_width=2, k_paths=2, max_route_combinations_per_target=2,
+            per_state_action_limit=4, max_expansions=30,
+            stop_after_mapped_operations=3,
+        ),
+    ).map(NativeMappingState(problem))
+    assert prefix.metrics.termination == "PARTIAL_DEPTH_REACHED"
+    assert len(prefix.frontier) == 2
+    continued = DeterministicNativeBeamMapper(
+        problem,
+        scorer=LengthActionScorer(),
+        config=NativeBeamConfig(
+            beam_width=2, k_paths=2, max_route_combinations_per_target=2,
+            per_state_action_limit=4, max_expansions=30,
+        ),
+    ).map(initial_frontier=prefix.frontier)
+    assert continued.metrics.mapped_operations >= 2
+    assert continued.metrics.termination != "ERROR"
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        DeterministicNativeBeamMapper(problem, scorer=LengthActionScorer()).map(
+            initial_state=prefix.state, initial_frontier=prefix.frontier
+        )
+
+
+class _RejectOnceScorer(LengthActionScorer):
+    def __init__(self, *, reject_all=False):
+        object.__setattr__(self, "reject_all", reject_all)
+        object.__setattr__(self, "calls", 0)
+
+    def score_actions(self, problem, state, actions):
+        object.__setattr__(self, "calls", self.calls + 1)
+        if self.reject_all or self.calls == 1:
+            raise ScorerStateUnavailable("test rejection", status="TEST")
+        return super().score_actions(problem, state, actions)
+
+
+def test_state_scorer_rejection_does_not_abort_other_frontier_states(fixed17):
+    problem, _ = fixed17
+    prefix = DeterministicNativeBeamMapper(
+        problem, scorer=LengthActionScorer(),
+        config=NativeBeamConfig(
+            beam_width=2, k_paths=2, max_route_combinations_per_target=2,
+            per_state_action_limit=4, max_expansions=30,
+            stop_after_mapped_operations=2,
+        ),
+    ).map(NativeMappingState(problem))
+    assert len(prefix.frontier) == 2
+    result = DeterministicNativeBeamMapper(
+        problem,
+        scorer=_RejectOnceScorer(),
+        config=NativeBeamConfig(
+            beam_width=2, k_paths=2, max_route_combinations_per_target=2,
+            per_state_action_limit=4, max_expansions=30,
+            stop_after_mapped_operations=3,
+        ),
+    ).map(initial_frontier=prefix.frontier)
+    assert result.metrics.scorer_rejected_states >= 1
+    assert result.metrics.mapped_operations >= 2
+    assert result.metrics.termination != "ERROR"
+
+
+def test_all_state_scorer_rejections_are_a_valid_mapping_failure(fixed17):
+    problem, _ = fixed17
+    result = DeterministicNativeBeamMapper(
+        problem,
+        scorer=_RejectOnceScorer(reject_all=True),
+        config=NativeBeamConfig(
+            beam_width=2, k_paths=2, max_route_combinations_per_target=2,
+            per_state_action_limit=4, max_expansions=30,
+        ),
+    ).map(NativeMappingState(problem))
+    assert result.metrics.scorer_rejected_states >= 1
+    assert result.metrics.termination == "NO_LEGAL_ACTION"
+    assert result.metrics.success is False
 
 
 def test_mapper_requires_concrete_batch_scorer(fixed17):

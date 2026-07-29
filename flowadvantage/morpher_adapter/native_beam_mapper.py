@@ -15,6 +15,15 @@ from .native_mapper import (
 )
 
 
+class ScorerStateUnavailable(RuntimeError):
+    """A scorer cannot represent one valid state; other beam states continue."""
+
+    def __init__(self, reason: str, *, status: str = "UNAVAILABLE") -> None:
+        super().__init__(reason)
+        self.reason = str(reason)
+        self.status = str(status)
+
+
 @dataclass(frozen=True)
 class ScheduleHorizon:
     """Finite, explicit Morpher scheduling horizon.
@@ -210,6 +219,8 @@ class NativeProgressEvent:
     duplicate_states: int
     elapsed_seconds: float
     stage_seconds: dict[str, float] = field(default_factory=dict)
+    scorer_rejected_states: int = 0
+    scorer_rejection_reasons: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -234,6 +245,8 @@ class NativeBeamMetrics:
     termination: str
     legality_violations: tuple[dict[str, Any], ...]
     stage_seconds: dict[str, float] = field(default_factory=dict)
+    scorer_rejected_states: int = 0
+    scorer_rejection_reasons: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -241,6 +254,7 @@ class NativeBeamResult:
     state: NativeMappingState | None
     mapping: dict[str, Any] | None
     metrics: NativeBeamMetrics
+    frontier: tuple[tuple[float, tuple[Any, ...], NativeMappingState], ...] = ()
 
 
 ProgressCallback = Callable[[NativeProgressEvent], None]
@@ -281,6 +295,7 @@ class DeterministicNativeBeamMapper:
         counters: dict[str, int],
         start: float,
         stage_seconds: dict[str, float] | None = None,
+        rejection_counts: dict[str, int] | None = None,
     ) -> None:
         if self.progress_callback is None:
             return
@@ -299,15 +314,33 @@ class DeterministicNativeBeamMapper:
                 duplicate_states=counters["duplicate_states"],
                 elapsed_seconds=time.monotonic() - start,
                 stage_seconds=dict(stage_seconds or {}),
+                scorer_rejected_states=sum((rejection_counts or {}).values()),
+                scorer_rejection_reasons=dict(rejection_counts or {}),
             )
         )
 
     def map(
-        self, initial_state: NativeMappingState | None = None
+        self,
+        initial_state: NativeMappingState | None = None,
+        initial_frontier: Sequence[tuple[float, tuple[Any, ...], NativeMappingState]] | None = None,
     ) -> NativeBeamResult:
         start = time.monotonic()
-        state = initial_state.copy() if initial_state is not None else NativeMappingState(
-            self.problem
+        if initial_state is not None and initial_frontier is not None:
+            raise ValueError("initial_state and initial_frontier are mutually exclusive")
+        if initial_frontier is not None and not initial_frontier:
+            raise ValueError("initial_frontier must not be empty")
+        if initial_frontier is not None:
+            for _, _, candidate in initial_frontier:
+                if candidate.problem is not self.problem:
+                    raise ValueError("frontier state belongs to a different native problem")
+        state = (
+            initial_state.copy()
+            if initial_state is not None
+            else (
+                initial_frontier[0][2].copy()
+                if initial_frontier is not None
+                else NativeMappingState(self.problem)
+            )
         )
         if state.problem is not self.problem:
             raise ValueError("initial state belongs to a different native problem")
@@ -320,6 +353,7 @@ class DeterministicNativeBeamMapper:
             "duplicate_states": 0,
             "scorer_calls": 0,
         }
+        rejection_counts: dict[str, int] = {}
         stage_seconds: dict[str, float] = {
             "candidate_generation": 0.0,
             "routing": 0.0,
@@ -327,9 +361,11 @@ class DeterministicNativeBeamMapper:
             "legality": 0.0,
         }
         sequence = 0
-        beam: list[tuple[float, tuple[Any, ...], NativeMappingState]] = [
-            (0.0, state.stable_key(), state)
-        ]
+        beam: list[tuple[float, tuple[Any, ...], NativeMappingState]] = (
+            sorted(initial_frontier, key=lambda item: (item[0], item[1], item[2].stable_key()))
+            if initial_frontier is not None
+            else [(0.0, state.stable_key(), state)]
+        )
         operation_order = [
             key
             for key in self.problem.operation_order()
@@ -344,6 +380,7 @@ class DeterministicNativeBeamMapper:
             counters=counters,
             start=start,
             stage_seconds=stage_seconds,
+            rejection_counts=rejection_counts,
         )
         for operation_key in operation_order:
             if self.cancel_check is not None and self.cancel_check():
@@ -353,6 +390,7 @@ class DeterministicNativeBeamMapper:
                     start,
                     "CANCELLED",
                     stage_seconds=stage_seconds,
+                    rejection_counts=rejection_counts,
                 )
             successor_by_key: dict[
                 tuple[Any, ...],
@@ -366,6 +404,7 @@ class DeterministicNativeBeamMapper:
                     return self._failure(
                         beam, counters, start, "MAX_EXPANSIONS",
                         stage_seconds=stage_seconds,
+                        rejection_counts=rejection_counts,
                     )
                 counters["expansions"] += 1
                 earliest, latest = self.config.schedule_horizon.bounds(
@@ -404,18 +443,21 @@ class DeterministicNativeBeamMapper:
                 if not actions:
                     continue
                 scoring_started = time.perf_counter()
-                scores = _checked_scores(
-                    self.scorer.score_actions(
-                        self.problem, parent, actions
-                    ),
-                    len(actions),
-                    component=self.scorer.name,
-                    # Top-k exact correction deliberately marks unretained
-                    # proposals +inf; they are filtered immediately below.
-                    permit_positive_infinity=isinstance(
-                        self.scorer, TopKExactRerankScorer
-                    ),
-                )
+                try:
+                    scores = _checked_scores(
+                        self.scorer.score_actions(
+                            self.problem, parent, actions
+                        ),
+                        len(actions),
+                        component=self.scorer.name,
+                        permit_positive_infinity=isinstance(
+                            self.scorer, TopKExactRerankScorer
+                        ),
+                    )
+                except ScorerStateUnavailable as error:
+                    key = f"{error.status}:{error.reason}"
+                    rejection_counts[key] = rejection_counts.get(key, 0) + 1
+                    continue
                 stage_seconds["scoring"] += time.perf_counter() - scoring_started
                 counters["scorer_calls"] += 1
                 ranked = sorted(
@@ -452,6 +494,7 @@ class DeterministicNativeBeamMapper:
                 return self._failure(
                     beam, counters, start, "NO_LEGAL_ACTION",
                     stage_seconds=stage_seconds,
+                    rejection_counts=rejection_counts,
                 )
             beam = sorted(
                 successor_by_key.values(),
@@ -467,6 +510,7 @@ class DeterministicNativeBeamMapper:
                 counters=counters,
                 start=start,
                 stage_seconds=stage_seconds,
+                rejection_counts=rejection_counts,
             )
             if (
                 self.config.stop_after_mapped_operations is not None
@@ -498,7 +542,10 @@ class DeterministicNativeBeamMapper:
                         termination="PARTIAL_DEPTH_REACHED",
                         legality_violations=(),
                         stage_seconds=dict(stage_seconds),
+                        scorer_rejected_states=sum(rejection_counts.values()),
+                        scorer_rejection_reasons=dict(rejection_counts),
                     ),
+                    frontier=tuple(beam),
                 )
 
         legality_failures: list[dict[str, Any]] = []
@@ -519,6 +566,8 @@ class DeterministicNativeBeamMapper:
                     beam_states=len(beam),
                     counters=counters,
                     start=start,
+                    stage_seconds=stage_seconds,
+                    rejection_counts=rejection_counts,
                 )
                 return NativeBeamResult(
                     state=complete_state,
@@ -546,7 +595,10 @@ class DeterministicNativeBeamMapper:
                         termination="DONE",
                         legality_violations=(),
                         stage_seconds=dict(stage_seconds),
+                        scorer_rejected_states=sum(rejection_counts.values()),
+                        scorer_rejection_reasons=dict(rejection_counts),
                     ),
+                    frontier=tuple(beam),
                 )
             legality_failures.extend(legality["violations"])
         return self._failure(
@@ -556,6 +608,7 @@ class DeterministicNativeBeamMapper:
             "INDEPENDENT_LEGALITY_FAILURE",
             legality_failures,
             stage_seconds=stage_seconds,
+            rejection_counts=rejection_counts,
         )
 
     def _failure(
@@ -566,6 +619,7 @@ class DeterministicNativeBeamMapper:
         termination: str,
         violations: Sequence[dict[str, Any]] = (),
         stage_seconds: dict[str, float] | None = None,
+        rejection_counts: dict[str, int] | None = None,
     ) -> NativeBeamResult:
         best_state = beam[0][2] if beam else None
         return NativeBeamResult(
@@ -591,5 +645,8 @@ class DeterministicNativeBeamMapper:
                 termination=termination,
                 legality_violations=tuple(dict(value) for value in violations),
                 stage_seconds=dict(stage_seconds or {}),
+                scorer_rejected_states=sum((rejection_counts or {}).values()),
+                scorer_rejection_reasons=dict(rejection_counts or {}),
             ),
+            frontier=tuple(beam),
         )

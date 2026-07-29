@@ -45,7 +45,7 @@ except RuntimeError:
 
 from quotientflow.flow_model import ResidualGNN, StandardScaler
 
-from .native_beam_mapper import NativeActionScorer
+from .native_beam_mapper import NativeActionScorer, ScorerStateUnavailable
 from .native_mapper import (
     NativeAction,
     NativeMappingState,
@@ -68,7 +68,7 @@ DEFAULT_CHECKPOINT = (
 )
 
 
-class NativeProposalCompatibilityError(ValueError):
+class NativeProposalCompatibilityError(ScorerStateUnavailable, ValueError):
     """The native contract cannot be represented by the frozen model."""
 
 
