@@ -20,6 +20,14 @@ Hours remaining: **70.39**
 
 ## Queue status (current)
 
+- The clean semantically preflighted native length baseline is now running
+  atomically under `results/paper_suite_v2_length_long_v1/run/` with two
+  one-thread workers and a user-approved 3,600-second watchdog. At the latest
+  checkpoint it has `13` immutable rows: `3 DONE`, `5
+  VALID_MAPPING_FAILURE`, `1 ERROR` (initialization contract failure), `2
+  RUNNING`, and `2 PENDING`. The two 8×8 jobs are actively advancing through
+  exact route enumeration; they are slow but not deadlocked. This is still
+  execution evidence, not a complete quality comparison.
 - The paper-suite v2 manifest is intentionally not launched: native
   executable-input provenance is still being completed, and no native
   baseline row is claimed from canonical JSON alone.
@@ -48,10 +56,11 @@ Hours remaining: **70.39**
   [docs/REAL_FLOW_PROBE_V1.md](docs/REAL_FLOW_PROBE_V1.md). This is execution
   and runtime evidence only; it is not a real-kernel utility claim.
 - The strict native-input registry now emits explicit rejected-manifest
-  reasons and hash-addressed staged-input paths. It currently indexes 5
-  complete canonical pairs, records 5 hash-verified staged input pairs, and
-  retains 7 incomplete/invalid manifests as rejected provenance rather than
-  silently dropping them.
+  reasons and hash-addressed staged-input paths. The original strict v1
+  snapshot indexed 5 complete canonical pairs; the latest additive v4
+  snapshot indexes 10 complete canonical export rows. Incomplete/invalid
+  manifests remain explicit rejected provenance rather than being silently
+  dropped.
 
 Timeouts, errors, and unsupported rows are retained and excluded from quality
 aggregates. Borderline values remain valid evidence and are marked AMBER in
