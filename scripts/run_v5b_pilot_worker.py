@@ -749,6 +749,41 @@ def main() -> int:
             },
         )
         return 3
+    except RuntimeError as error:
+        # A deterministic prefix can legitimately have no legal successor on
+        # a constrained native MRRG.  This is a completed mapping attempt, not
+        # an infrastructure exception: preserve the exact termination reason
+        # so coverage accounting can distinguish it from a worker error.
+        message = str(error)
+        if "deterministic length-prefix initialization failed: NO_LEGAL_ACTION" in message:
+            atomic_json(
+                result_path,
+                {
+                    "schema": "flowadvantage_v5b_pilot_result_v1",
+                    "work_id": spec.get("work_id"),
+                    "status": "VALID_MAPPING_FAILURE",
+                    "success": False,
+                    "legal": False,
+                    "termination": "NO_LEGAL_ACTION",
+                    "failure_stage": "initialization",
+                    "error_type": "ValidMappingFailure",
+                    "error_message": message,
+                    "config_hash": spec.get("config_hash"),
+                },
+            )
+            return 0
+        atomic_json(
+            result_path,
+            {
+                "schema": "flowadvantage_v5b_pilot_result_v1",
+                "work_id": spec.get("work_id"),
+                "status": "ERROR",
+                "error_type": type(error).__name__,
+                "error_message": message,
+                "config_hash": spec.get("config_hash"),
+            },
+        )
+        raise
     except BaseException as error:
         atomic_json(
             result_path,
