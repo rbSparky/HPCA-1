@@ -4,11 +4,11 @@ Base Morpher commit: `9a9dce7aea521f1d5ef33686f57ca84864edb3c9`.
 
 Validated bridge image: `quotientflow-morpher-v5b-native-fixed11@sha256:629964cd149c9e8879b026bf4c0164ea4d54f3acd733618452db6d5fcf62124d`.
 
-Current compatibility build: `quotientflow-morpher-v5b-native-fixed14@sha256:f1dee9de88d0935ccb1825200040e090abf78ff76140bb0e8d494c00862c9088`.
+Current legality-validation build: `quotientflow-morpher-v5b-native-fixed15@sha256:ad69877bd76b754f3041422916f1a15bd9cb07b1a520fb7cbe4103a08f64cea4`.
 
 Exact source diff: `flowadvantage_bridge.patch`
 
-Patch SHA-256: `4894054e67eb43f16ad0a40bcbf9783305b67612925a3ea5b0d7acdfd11fad54`.
+Patch SHA-256: `22e4311a1c7b3b021bc5047aa962b9fa6ce248b5c91f33e4168cf5bf1556db4b`.
 
 The patch adds dump/load flags, actual expanded MRRG export, stable keyed
 DFG identities (including duplicate legacy numeric IDs), native operand-edge
@@ -28,5 +28,6 @@ by Morpher's own checked-in `fix_fft` DFG: a missing predicate `NPB` attribute
 now deterministically defaults to the native non-negated value `0`, and a
 candidate whose recurrence anchor is temporarily unmapped by backtracking
 defers the check instead of dereferencing a null placement. External mapping
-import then verifies the original recurrence inequality against the complete
+import then verifies both the original recurrence-anchor inequality and every
+loop-carried dependency's destination-latency bound against the complete
 ordered route latency sequence.

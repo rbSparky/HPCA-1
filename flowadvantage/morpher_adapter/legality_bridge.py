@@ -135,6 +135,15 @@ def validate_mapping(
                         "fu": fu_id,
                     }
                 )
+            if opcode.startswith(("LOAD", "STORE")) and fu.get("memory_role") != "memory":
+                violations.append(
+                    {
+                        "class": "memory-port violation",
+                        "node": node_key,
+                        "opcode": opcode,
+                        "fu": fu_id,
+                    }
+                )
 
         modulo_time = operation.get("modulo_time")
         if not isinstance(modulo_time, int) or not 0 <= modulo_time < ii:
@@ -284,6 +293,27 @@ def validate_mapping(
                         }
                     )
             destination_node = nodes.get(pair[1], {})
+            dependency = dependencies[pair]
+            iteration_distance = int(dependency.get("iteration_distance", 0) or 0)
+            destination_operation = operations_by_node.get(pair[1])
+            if iteration_distance and destination_operation is not None:
+                destination_latency = destination_operation.get("latency")
+                if (
+                    isinstance(destination_latency, int)
+                    and max(map(int, latencies))
+                    > destination_latency + iteration_distance * ii
+                ):
+                    violations.append(
+                        {
+                            "class": "recurrence violation",
+                            "edge": route.get("edge_id"),
+                            "iteration_distance": iteration_distance,
+                            "maximum_route_latency": max(map(int, latencies)),
+                            "maximum_legal_latency": (
+                                destination_latency + iteration_distance * ii
+                            ),
+                        }
+                    )
             for recurrence_parent_key in destination_node.get(
                 "recurrence_parent_keys", []
             ):

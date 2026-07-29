@@ -1,4 +1,3 @@
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 06:35:43.169019748 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 10:48:58.477208016 +0000
 @@ -170,6 +170,11 @@
@@ -13,7 +12,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  	// by Yujie
  	void PrintMappingForPillars(string fileName_i, string fileName_r);    
  
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 06:35:43.169019748 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 07:17:12.698350872 +0000
 @@ -68,6 +68,7 @@
@@ -24,7 +22,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  
  	PE* getPE(){return pe;}
  
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/util/util.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/util/util.h
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/util/util.h	2026-07-25 06:35:43.183686410 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/util/util.h	2026-07-25 07:19:00.370496874 +0000
 @@ -43,6 +43,8 @@
@@ -54,7 +51,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  	assert(ret.dfg_filename!= "");
  	assert(ret.json_file_name!= "");
  	args.print_as_ini(std::cout);
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 06:35:43.198353068 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 10:36:48.493655818 +0000
 @@ -123,6 +123,37 @@
@@ -117,7 +113,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  				std::cout << "\nPrinting HyCUBE Binary...\n";
  				mapper->printHyCUBEBinary(tempCGRA);
  			}
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CMakeLists.txt results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CMakeLists.txt
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CMakeLists.txt	2026-07-25 06:35:43.198353068 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CMakeLists.txt	2026-07-25 07:31:31.099858468 +0000
 @@ -3,6 +3,10 @@
@@ -136,9 +131,8 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  #target_link_libraries(${PROJ} nlohmann_json::nlohmann_json)
  
 -
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 06:35:43.198353068 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-29 06:04:42.268949371 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-29 08:01:07.913717591 +0000
 @@ -6,6 +6,15 @@
   */
  
@@ -171,7 +165,7 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  				this->insertConnection(src_p, dest_p);
  			}
  		}
-@@ -1239,6 +1253,444 @@
+@@ -1239,6 +1253,449 @@
  	outFile.close();
  }
  
@@ -514,6 +508,11 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +		int maximum_route_latency = INT_MIN;
 +		for (auto const &latency : r.value("ordered_resource_latencies", json::array()))
 +			maximum_route_latency = max(maximum_route_latency, latency.get<int>());
++		int iteration_distance = src->childNextIter.count(dst) ? src->childNextIter[dst] : 0;
++		if (iteration_distance > 0 && maximum_route_latency != INT_MIN &&
++			maximum_route_latency > dst->rootDP->getLat() + iteration_distance * get_t_max()) {
++			error="recurrence violation"; return false;
++		}
 +		for (DFGNode *rec_parent : dst->recParents) {
 +			if (!rec_parent->rootDP) { error="unplaced recurrence parent"; return false; }
 +			if (maximum_route_latency != INT_MIN &&
@@ -616,7 +615,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  // by Yujie
  void CGRAXMLCompile::CGRA::PrintMappingForPillars(string fileName_i, string fileName_r){
  	DataPrepare();
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/dfg/DFG.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/dfg/DFG.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/dfg/DFG.cpp	2026-07-25 06:35:43.198353068 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/dfg/DFG.cpp	2026-07-29 02:51:58.701473813 +0000
 @@ -227,7 +227,12 @@
@@ -633,7 +631,6 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  					output->QueryIntAttribute("NPB", &npb);
  					output_ss<< "npb = " << npb;
  					assert(npb == 0 || npb == 1);
-diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-25 06:35:43.202019731 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-29 06:04:03.944981894 +0000
 @@ -1905,7 +1905,17 @@

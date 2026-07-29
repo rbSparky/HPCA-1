@@ -166,3 +166,25 @@ def test_native_legality_rejects_recurrence_route_overrun():
     result = validate_mapping(mapping, dfg, mrrg)
     assert not result["legal"]
     assert any(v["class"] == "recurrence violation" for v in result["violations"])
+
+
+def test_native_legality_rejects_loop_carried_edge_overrun():
+    mapping, dfg, mrrg = _native_contract_fixture()
+    dfg["dependencies"][0]["iteration_distance"] = 1
+    mapping["routes"][0]["ordered_resource_latencies"] = [4, 5]
+    mapping["routes"][0]["start_time"] = 4
+    mapping["routes"][0]["end_time"] = 5
+    result = validate_mapping(mapping, dfg, mrrg)
+    assert not result["legal"]
+    assert any(v["class"] == "recurrence violation" for v in result["violations"])
+
+
+def test_native_legality_rejects_memory_operation_on_compute_fu():
+    mapping, dfg, mrrg = _native_contract_fixture()
+    dfg["nodes"][0]["opcode"] = "LOAD"
+    mapping["operations"][0]["opcode"] = "LOAD"
+    mrrg["resources"][2]["supported_operations"].append("LOAD")
+    mrrg["resources"][2]["memory_role"] = "compute"
+    result = validate_mapping(mapping, dfg, mrrg)
+    assert not result["legal"]
+    assert any(v["class"] == "memory-port violation" for v in result["violations"])
