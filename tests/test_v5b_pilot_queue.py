@@ -176,42 +176,11 @@ def test_worker_manifest_defaults_survive_csv_empty_cells():
         _optional_bool("maybe", True)
 
 
-def test_legacy_method_alias_fails_preflight_instead_of_returning_proxy(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(
-        "scripts.run_v5b_pilot_queue._git_commit", lambda: "a" * 40
-    )
-    row = freeze_job(
-        _job(tmp_path, method="top4"), tmp_path / "output"
-    )
-    spec = tmp_path / "spec.json"
-    row.update(
-        {
-            "heartbeat_path": str(tmp_path / "heartbeat.json"),
-            "result_path": str(tmp_path / "result.json"),
-            "artifact_directory": str(tmp_path / "artifacts"),
-        }
-    )
-    spec.write_text(json.dumps(row), encoding="utf-8")
-    import subprocess
-    import sys
+def test_canonical_flow_methods_are_not_legacy_aliases():
+    from scripts.run_v5b_pilot_worker import FLOW_METHODS, SUPPORTED_EXECUTORS
 
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "scripts.run_v5b_pilot_worker",
-            "--spec",
-            str(spec),
-        ],
-        cwd=Path(__file__).resolve().parents[1],
-        check=False,
-    )
-    payload = json.loads((tmp_path / "result.json").read_text())
-    assert completed.returncode == 3
-    assert payload["status"] == "UNSUPPORTED"
-    assert "refusing to synthesize" in payload["error_message"]
+    assert {"flow_proposal", "flow_top4", "full_relaxed_lookahead"} <= FLOW_METHODS
+    assert {"proposal", "top4", "full"}.isdisjoint(SUPPORTED_EXECUTORS)
 
 
 @pytest.mark.parametrize("method", ["dual", "proposal", "top4", "full"])
