@@ -18,6 +18,8 @@ def test_manifest_uses_only_real_native_contracts(tmp_path):
     assert payload["jobs"]
     assert all(row["dfg_hash"] and row["architecture_hash"] and row["reference_mapping_hash"] for row in payload["jobs"])
     assert all(Path(row["dfg_path"]).is_file() for row in payload["jobs"])
+    assert all(row["evaluation_mode"] == "anchored_partial_state_completion" for row in payload["jobs"])
+    assert all(row["full_end_to_end"] is False for row in payload["jobs"])
     assert metadata["blockers"]  # current corpus is intentionally incomplete
     assert "native_pathfinder" in metadata["unsupported_methods"]
 
