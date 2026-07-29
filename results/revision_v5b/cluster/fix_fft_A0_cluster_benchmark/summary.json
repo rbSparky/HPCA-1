@@ -1,0 +1,21 @@
+{
+  "documents": {
+    "dfg.json": {
+      "bytes": 35102,
+      "sha256": "81e9c2098753b1263c3f4434241092438bf493babcf1f03256c276babb8da94d"
+    },
+    "mapping.json": {
+      "bytes": 3847162,
+      "sha256": "c5fd5536a27e3a5d587cef3c12738e006bc72e38a43ba4f3b962abf3e7752fae"
+    },
+    "mrrg.json": {
+      "bytes": 4804455,
+      "sha256": "9341beb5a1ec98803d3964f8411bc28b76d473a377e6e80df20940359877f7f9"
+    }
+  },
+  "ii": 9,
+  "operation_count": 47,
+  "route_count": 65,
+  "schema": "cluster_morpher_export_v5b",
+  "wall_seconds": 315.5553708076477
+}

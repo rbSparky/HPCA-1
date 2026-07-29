@@ -1,0 +1,77 @@
+{
+  "bank_count": 2,
+  "bank_size": 2048,
+  "conversion": "flat_address = source_bank * bank_size + source_local_address",
+  "emitted_variables": [
+    "A",
+    "ALPHA",
+    "B",
+    "add49",
+    "mul",
+    "mul12",
+    "shr"
+  ],
+  "records": [
+    {
+      "derived_flat_address": 0,
+      "source_bank": 0,
+      "source_local_address": 0,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "A"
+    },
+    {
+      "derived_flat_address": 272,
+      "source_bank": 0,
+      "source_local_address": 272,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "add49"
+    },
+    {
+      "derived_flat_address": 268,
+      "source_bank": 0,
+      "source_local_address": 268,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "mul12"
+    },
+    {
+      "derived_flat_address": 2304,
+      "source_bank": 1,
+      "source_local_address": 256,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "ALPHA"
+    },
+    {
+      "derived_flat_address": 2176,
+      "source_bank": 1,
+      "source_local_address": 128,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "B"
+    },
+    {
+      "derived_flat_address": 2312,
+      "source_bank": 1,
+      "source_local_address": 264,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "mul"
+    },
+    {
+      "derived_flat_address": 2308,
+      "source_bank": 1,
+      "source_local_address": 260,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "shr"
+    }
+  ],
+  "required_variables": [
+    "A",
+    "ALPHA",
+    "B",
+    "add49",
+    "mul",
+    "mul12",
+    "shr"
+  ],
+  "schema": "morpher_mem_alloc_derivation_v1",
+  "source_architecture": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed14-gcc7-af402f1b7f20/source/Morpher_CGRA_Mapper/json_arch/gemm_various_mem_archs/stdnoc_mem_dual_port_two_banked.json",
+  "source_architecture_sha256": "daf7a593bbc844ae1dfa0f19325b7594a58a75a8a87bdb33c1436c897a8d62e3"
+}
