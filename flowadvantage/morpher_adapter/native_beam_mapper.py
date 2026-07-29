@@ -455,6 +455,7 @@ class DeterministicNativeBeamMapper:
                         ),
                     )
                 except ScorerStateUnavailable as error:
+                    stage_seconds["scoring"] += time.perf_counter() - scoring_started
                     key = f"{error.status}:{error.reason}"
                     rejection_counts[key] = rejection_counts.get(key, 0) + 1
                     continue
