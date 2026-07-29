@@ -75,7 +75,7 @@ ordered route latency sequence.
 post-patch source digests are:
 
 * `include/morpher/mapper/SimulatedAnnealingMapper.h`: `1d0e204a35df263a2c58b3ccb0ccdb263c427564144d42d7d591c00291586be4`
-* `src/mapper/SimulatedAnnealingMapper.cpp`: `68c9e2396835930e07a801b6e6bfc4aac634c39a3a5bd59e2981b38ab2baa494`
+* `src/mapper/SimulatedAnnealingMapper.cpp`: `2cc3159b1b413087cfe9f68270fe96a2427eddc992086822b1685efb55730b03`
 * `include/morpher/util/util.h`: `87c25101c4d85f0f3cbc794795c81bbe8e034bc82b14ca37f2e0caa0f9deaa7c`
 * `src/CGRA_xml_compiler.cpp`: `13685c3d1c4821f5c6be5312974cdd80e477f1b50ab00114e3a3d166e994b4d5`
 
