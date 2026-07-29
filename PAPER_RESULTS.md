@@ -1,6 +1,6 @@
 # FlowAdvantage Paper Results Index
 
-Generated: `2026-07-29T12:52:00Z`  
+Generated: `2026-07-29T13:58:00Z`  
 Deadline: `2026-07-31 23:59 IST`  
 Hours remaining: **70.39**
 
@@ -35,6 +35,18 @@ Hours remaining: **70.39**
 - The 60% dual-linear calibration likewise completed as a structured valid
   failure after the frontier-preserving repair; it did not produce an
   infrastructure error.
+- Full regression tests currently pass: `148 passed` with the repository's
+  plugin autoload disabled to avoid an unrelated ROS launch-testing dependency.
+- A strict two-architecture real-kernel probe is running atomically under
+  `results/paper_suite_v2_flow_probe_v1/run/`. The first two dual-linear rows
+  reached their declared 600-second wall boundary and are recorded as
+  `TIMEOUT` with SIGUSR1 traces; they are not mapping failures. The remaining
+  proposal/top-4 rows are queued behind the active worker.
+- The strict native-input registry now emits explicit rejected-manifest
+  reasons and hash-addressed staged-input paths. It currently indexes 5
+  complete canonical pairs, records 5 hash-verified staged input pairs, and
+  retains 7 incomplete/invalid manifests as rejected provenance rather than
+  silently dropping them.
 
 Timeouts, errors, and unsupported rows are retained and excluded from quality
 aggregates. Borderline values remain valid evidence and are marked AMBER in
