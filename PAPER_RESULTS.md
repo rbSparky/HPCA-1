@@ -37,11 +37,16 @@ Hours remaining: **70.39**
   infrastructure error.
 - Full regression tests currently pass: `148 passed` with the repository's
   plugin autoload disabled to avoid an unrelated ROS launch-testing dependency.
-- A strict two-architecture real-kernel probe is running atomically under
-  `results/paper_suite_v2_flow_probe_v1/run/`. The first two dual-linear rows
-  reached their declared 600-second wall boundary and are recorded as
-  `TIMEOUT` with SIGUSR1 traces; they are not mapping failures. The remaining
-  proposal/top-4 rows are queued behind the active worker.
+- The strict two-architecture real-kernel probe is now terminal under
+  `results/paper_suite_v2_flow_probe_v1/run/`. Both proposal-only rows
+  completed legal mappings with route cost `71.0` and 22 parent solves; both
+  dual-linear rows and both top-4 rows reached their 600-second atomic wall
+  boundary and are recorded as `TIMEOUT`, not mapping failures. The paired
+  length rows completed at the same route cost in 117.44 s (A0) and 146.61 s
+  (A2), while proposal-only took 468.48 s (A0) and 481.49 s (A2).
+- The exact probe table and interpretation are frozen in
+  [docs/REAL_FLOW_PROBE_V1.md](docs/REAL_FLOW_PROBE_V1.md). This is execution
+  and runtime evidence only; it is not a real-kernel utility claim.
 - The strict native-input registry now emits explicit rejected-manifest
   reasons and hash-addressed staged-input paths. It currently indexes 5
   complete canonical pairs, records 5 hash-verified staged input pairs, and
