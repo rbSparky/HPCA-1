@@ -12,6 +12,9 @@ Self-recurrence/fanout validation build:
 Memory round-trip validation build:
 `quotientflow-morpher-v5b-native-fixed17@sha256:4581c2c9a868ffd129609c5b962417e1d8ff3e84cbe2890a6d1364101e901957`.
 
+Deterministic simulated-annealing build:
+`quotientflow-morpher-v5b-native-fixed18-sa@sha256:46d19ce00d59b279c4d1e0e7bdcc09072eb13c1ae1d28a33e7bbb1dce65eb33f`.
+
 Exact source diff: `flowadvantage_bridge.patch`
 
 Patch SHA-256: `dc4b4d82a6c127279a682861e2306f6e9ca68b7e3df77f37a50c0655cc1c041b`.
@@ -84,3 +87,9 @@ omission preserves the pre-patch random-device/time behavior. When present,
 acceptance draws, node selection, parent selection, and candidate-destination
 shuffles all consume the mapper-owned `std::mt19937` stream. No SA objective,
 temperature schedule, or architecture behavior changed.
+
+The fixed18 smoke mapped the native 20-operation `array_add` DFG at II=4
+twice with `--seed 11 -r 100`. Both runs produced byte-identical
+`mapping.json` files (SHA-256
+`5a88d356b6045cde086097c58ed8a530427d4d7a51e08a0ac4bc201ff3b601af`)
+and identical operation placements, ordered routes, memory bindings, and II.

@@ -1,0 +1,120 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 341B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/quotientflow-morpher-v5-original-patched:latest
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 DONE 0.0s
+
+#5 [1/4] FROM docker.io/library/quotientflow-morpher-v5-original-patched:latest@sha256:f53d7d90e929ef8d0f31809436cb0427057801b77c57d5da8f311bb1b88e98ca
+#5 resolve docker.io/library/quotientflow-morpher-v5-original-patched:latest@sha256:f53d7d90e929ef8d0f31809436cb0427057801b77c57d5da8f311bb1b88e98ca 0.0s done
+#5 CACHED
+
+#4 [internal] load build context
+#4 transferring context: 134.38kB 0.1s done
+#4 DONE 0.1s
+
+#6 [2/4] COPY Morpher_CGRA_Mapper /home/user/morpher/Morpher_CGRA_Mapper
+#6 DONE 0.7s
+
+#7 [3/4] COPY Morpher_DFG_Generator /home/user/morpher/Morpher_DFG_Generator
+#7 DONE 0.8s
+
+#8 [4/4] RUN cd /home/user/morpher/Morpher_CGRA_Mapper && rm -rf build && mkdir build && cd build && cmake .. && make all -j2
+#8 0.645 -- The C compiler identification is GNU 7.5.0
+#8 0.798 -- The CXX compiler identification is GNU 7.5.0
+#8 0.813 -- Check for working C compiler: /usr/bin/cc
+#8 0.978 -- Check for working C compiler: /usr/bin/cc -- works
+#8 0.980 -- Detecting C compiler ABI info
+#8 1.139 -- Detecting C compiler ABI info - done
+#8 1.153 -- Detecting C compile features
+#8 1.638 -- Detecting C compile features - done
+#8 1.644 -- Check for working CXX compiler: /usr/bin/c++
+#8 1.806 -- Check for working CXX compiler: /usr/bin/c++ -- works
+#8 1.807 -- Detecting CXX compiler ABI info
+#8 1.978 -- Detecting CXX compiler ABI info - done
+#8 1.989 -- Detecting CXX compile features
+#8 2.756 -- Detecting CXX compile features - done
+#8 2.775 -- Configuring done
+#8 2.794 -- Generating done
+#8 2.801 -- Build files have been written to: /home/user/morpher/Morpher_CGRA_Mapper/build
+#8 2.922 Scanning dependencies of target cgra_xml_mapper
+#8 2.950 [  9%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/CGRA_xml_compiler.cpp.o
+#8 2.950 [  9%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/CGRA.cpp.o
+#8 8.464 [ 14%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/DataPath.cpp.o
+#8 11.69 [ 19%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/FU.cpp.o
+#8 13.11 [ 23%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/Module.cpp.o
+#8 14.61 [ 28%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/PE.cpp.o
+#8 17.25 [ 33%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/Port.cpp.o
+#8 18.44 [ 38%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/arch/RegFile.cpp.o
+#8 20.52 [ 42%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/dfg/DFG.cpp.o
+#8 20.84 [ 47%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/dfg/DFGEdge.cpp.o
+#8 20.90 [ 52%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/dfg/DFGNode.cpp.o
+#8 23.34 [ 57%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/lisa/LISAController.cpp.o
+#8 24.49 [ 61%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/lisa/LISADFG.cpp.o
+#8 25.71 [ 66%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/lisa/LISAMapper.cpp.o
+#8 25.85 [ 71%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/lisa/LISASchedule.cpp.o
+#8 26.79 [ 76%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/lisa/gnn.cpp.o
+#8 27.42 [ 80%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/mapper/HeuristicMapper.cpp.o
+#8 27.95 /home/user/morpher/Morpher_CGRA_Mapper/src/lisa/LISAMapper.cpp: In member function 'void CGRAXMLCompile::LISAMapper::do_training(arguments, CGRAXMLCompile::TimeDistInfo&, int)':
+#8 27.95 /home/user/morpher/Morpher_CGRA_Mapper/src/lisa/LISAMapper.cpp:180:77: warning: narrowing conversion of 'elapsed_seconds.std::chrono::duration<double>::count()' from 'std::chrono::duration<double>::rep {aka double}' to 'int' inside { } [-Wnarrowing]
+#8 27.95       perf_metric this_iter_perf { curr_II, getCost() , elapsed_seconds.count() };
+#8 27.95                                                         ~~~~~~~~~~~~~~~~~~~~~^~
+#8 36.81 [ 85%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/mapper/PathFinderMapper.cpp.o
+#8 38.29 [ 90%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/mapper/SimulatedAnnealingMapper.cpp.o
+#8 44.20 [ 95%] Building CXX object src/CMakeFiles/cgra_xml_mapper.dir/util/tinyxml2.cpp.o
+#8 46.57 [100%] Linking CXX executable cgra_xml_mapper
+#8 47.84 [100%] Built target cgra_xml_mapper
+#8 DONE 48.0s
+
+#9 exporting to image
+#9 exporting layers
+#9 exporting layers 1.6s done
+#9 exporting manifest sha256:bbf2a54baefad753585c8c6f7e5bb88dbd1998d0fd0edf0c39b01fe82d495c3b 0.0s done
+#9 exporting config sha256:e6fb9e8c0a6c665d47535198e78aaaf23addcbc7550515477db03aced01b1075 0.0s done
+#9 exporting attestation manifest sha256:28097b12f9fc56edd8e0a760c592ec7bd4de64d3f34393026e0a27153684ea1c 0.0s done
+#9 exporting manifest list sha256:1dab4f7c473afb4b1b91e650c694857f6da265ab01ea1dbcc35148b96dda2947 0.1s done
+#9 naming to docker.io/library/quotientflow-morpher-v5b-native:latest
+#9 naming to docker.io/library/quotientflow-morpher-v5b-native:latest done
+#9 unpacking to docker.io/library/quotientflow-morpher-v5b-native:latest
+#9 unpacking to docker.io/library/quotientflow-morpher-v5b-native:latest 1.2s done
+#9 DONE 3.0s
+
+## Fixed18 deterministic simulated-annealing build
+
+Command:
+
+```text
+docker build --pull=false -f results/revision_v5b/morpher_patch/Dockerfile \
+  -t quotientflow-morpher-v5b-native-fixed18-sa \
+  results/revision_v5b/morpher_patch
+```
+
+Result: success. All Morpher mapper objects were rebuilt with GCC 7.5.0.
+
+Resolved image:
+
+```text
+quotientflow-morpher-v5b-native-fixed18-sa@sha256:46d19ce00d59b279c4d1e0e7bdcc09072eb13c1ae1d28a33e7bbb1dce65eb33f
+```
+
+Determinism smoke:
+
+```text
+cgra_xml_mapper \
+  -d applications/array_add/array_add_INNERMOST_LN1_PartPred_DFG.xml \
+  -x 4 -y 4 -j json_arch/hycube_original.json \
+  -i 4 -t HyCUBE_4REG -m 1 -r 100 --seed 11 \
+  --dump-flowadvantage-state OUTPUT
+```
+
+Two independent containers produced byte-identical mapping JSON with SHA-256
+`5a88d356b6045cde086097c58ed8a530427d4d7a51e08a0ac4bc201ff3b601af`.
