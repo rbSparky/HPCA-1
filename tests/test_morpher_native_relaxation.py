@@ -97,7 +97,9 @@ def test_native_relaxation_uses_complete_exported_mrrg(
     }
     assert result.remaining_operations == 1
     assert result.remaining_dependencies == 2
-    assert result.flow_variables == 2 * len(unique_edges)
+    assert result.full_flow_variables == 2 * len(unique_edges)
+    assert result.flow_variables < result.full_flow_variables
+    assert result.flow_edge_reduction_fraction > 0.5
     assert set(result.routing_resource_duals) == set(problem.resources)
     assert set(result.capacity_slacks) == set(problem.resources)
     assert len(result.routing_edge_duals) == len(unique_edges)
@@ -138,6 +140,27 @@ def test_native_relaxation_cache_repeat_is_exact(
     ).solve(problem, state)
     assert reloaded.cache_hit
     assert reloaded.objective == first.objective
+
+
+def test_reachable_edge_pruning_preserves_deep_fixed17_value(
+    fixed17_residual, tmp_path
+):
+    problem, _, _, state = fixed17_residual
+    full = NativeRelaxationSolver(
+        NativeRelaxationConfig(reachable_edge_pruning=False),
+        cache_dir=tmp_path / "full",
+    ).solve(problem, state)
+    pruned = NativeRelaxationSolver(
+        NativeRelaxationConfig(reachable_edge_pruning=True),
+        cache_dir=tmp_path / "pruned",
+    ).solve(problem, state)
+    assert full.feasible and pruned.feasible
+    assert abs(full.objective - pruned.objective) / max(1.0, abs(full.objective)) <= 1e-6
+    assert pruned.flow_variables < full.flow_variables
+    assert pruned.flow_edge_reduction_fraction >= 0.5
+    assert pruned.assignment_residual <= 1e-6
+    assert pruned.flow_residual <= 1e-6
+    assert pruned.routing_capacity_violation <= 1e-6
 
 
 def test_exact_child_evaluator_produces_finite_native_action_ranking(

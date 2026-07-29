@@ -49,7 +49,8 @@ class NativeRelaxationConfig:
     solver_fallback: str = "OSQP"
     max_solve_seconds: float = 120.0
     feasibility_tolerance: float = 1e-7
-    cache_version: str = "native_mrrg_fractional_v3"
+    reachable_edge_pruning: bool = True
+    cache_version: str = "native_mrrg_fractional_v4"
 
     def __post_init__(self) -> None:
         if self.tau <= 0:
@@ -84,6 +85,8 @@ class NativeRelaxationResult:
     remaining_dependencies: int = 0
     placement_variables: int = 0
     flow_variables: int = 0
+    full_flow_variables: int = 0
+    flow_edge_reduction_fraction: float = 0.0
     cache_key: str = ""
     cache_hit: bool = False
     error: str = ""
@@ -402,23 +405,6 @@ class NativeRelaxationSolver:
                 routing_constraints=[],
             )
 
-        # Sparse outgoing-minus-incoming incidence over every exported native
-        # resource and every directed native MRRG edge.
-        rows: list[int] = []
-        columns: list[int] = []
-        values: list[float] = []
-        for column, (source, destination) in enumerate(native_edges):
-            rows.extend((resource_index[source], resource_index[destination]))
-            columns.extend((column, column))
-            values.extend((1.0, -1.0))
-        incidence = sp.csr_matrix(
-            (values, (rows, columns)), shape=(r_count, e_count)
-        )
-        outgoing = incidence.maximum(0.0)
-        incoming = (-incidence).maximum(0.0)
-
-        f = cp.Variable((len(dependencies), e_count), name="native_f")
-        constraints.extend((f >= 0.0, f <= 1.0))
         source_keys = tuple(
             sorted({_dependency_key(dependency)[0] for dependency in dependencies})
         )
@@ -429,11 +415,58 @@ class NativeRelaxationSolver:
 
         endpoint_rhs: list[Any] = []
         flow_constraints: list[cp.Constraint] = []
+        flows: list[cp.Variable] = []
+        commodity_columns: list[np.ndarray] = []
+        commodity_incidences: list[sp.csr_matrix] = []
+        commodity_outgoing: list[sp.csr_matrix] = []
+        commodity_incoming: list[sp.csr_matrix] = []
         resource_usage_by_source: dict[int, list[Any]] = {
             index: [] for index in range(len(source_keys))
         }
         for dependency_index, dependency in enumerate(dependencies):
             source_key, destination_key = _dependency_key(dependency)
+            columns = self._reachable_edge_columns(
+                problem,
+                state,
+                candidates,
+                candidate_by_operation,
+                dependency,
+                native_edges,
+            )
+            if columns.size == 0:
+                return _native_failure(
+                    "infeasible",
+                    "none",
+                    start,
+                    cache_key,
+                    len(remaining),
+                    len(dependencies),
+                    f"no legal temporal native route edges for {source_key}->{destination_key}",
+                    placement_variables=len(candidates),
+                )
+            commodity_columns.append(columns)
+            local_rows: list[int] = []
+            local_cols: list[int] = []
+            local_values: list[float] = []
+            for local_column, global_column in enumerate(columns):
+                source_resource, destination_resource = native_edges[int(global_column)]
+                local_rows.extend(
+                    (resource_index[source_resource], resource_index[destination_resource])
+                )
+                local_cols.extend((local_column, local_column))
+                local_values.extend((1.0, -1.0))
+            local_incidence = sp.csr_matrix(
+                (local_values, (local_rows, local_cols)),
+                shape=(r_count, len(columns)),
+            )
+            local_outgoing = local_incidence.maximum(0.0)
+            local_incoming = (-local_incidence).maximum(0.0)
+            commodity_incidences.append(local_incidence)
+            commodity_outgoing.append(local_outgoing)
+            commodity_incoming.append(local_incoming)
+            flow = cp.Variable(len(columns), name=f"native_f_{dependency_index}")
+            flows.append(flow)
+            constraints.extend((flow >= 0.0, flow <= 1.0))
             source_distribution = self._endpoint_distribution(
                 problem,
                 state,
@@ -458,19 +491,19 @@ class NativeRelaxationSolver:
             )
             rhs = source_distribution - destination_distribution
             endpoint_rhs.append(rhs)
-            flow_constraint = incidence @ f[dependency_index, :] == rhs
+            flow_constraint = local_incidence @ flow == rhs
             constraints.append(flow_constraint)
             flow_constraints.append(flow_constraint)
             source_row = source_index[source_key]
             resource_usage = cp.maximum(
-                outgoing @ f[dependency_index, :],
-                incoming @ f[dependency_index, :],
+                local_outgoing @ flow,
+                local_incoming @ flow,
             )
             resource_usage_by_source[source_row].append(resource_usage)
             constraints.extend(
                 (
                     resource_usage <= z[source_row, :],
-                    f[dependency_index, :] <= w[source_row, :],
+                    flow <= w[source_row, columns],
                 )
             )
         actual_resource_usage = [
@@ -615,12 +648,12 @@ class NativeRelaxationSolver:
         # transition.  The strongly convex term makes primal routing and dual
         # prices deterministic when several native paths have equal length.
         objective = cp.Minimize(
-            cp.sum(f)
+            sum((cp.sum(flow) for flow in flows))
             + self.config.tau
             / 2.0
             * (
                 cp.sum_squares(x)
-                + cp.sum_squares(f)
+                + sum((cp.sum_squares(flow) for flow in flows))
             )
         )
         cvx_problem = cp.Problem(objective, constraints)
@@ -630,20 +663,140 @@ class NativeRelaxationSolver:
             canonical_seconds=0.0,
             cache_key=cache_key,
             x=x,
-            f=f,
+            f=flows,
             z=z,
             w=w,
             candidates=candidates,
             dependencies=dependencies,
             resource_ids=resource_ids,
             edge_ids=edge_ids,
-            incidence=incidence,
+            incidence=commodity_incidences,
+            commodity_columns=commodity_columns,
+            commodity_incidences=commodity_incidences,
+            commodity_outgoing=commodity_outgoing,
+            commodity_incoming=commodity_incoming,
             endpoint_rhs=endpoint_rhs,
             assignment_constraints=assignment_constraints,
             compute_constraints=compute_constraints,
             routing_constraints=routing_constraints,
             actual_resource_usage=actual_resource_usage,
         )
+
+    def _reachable_edge_columns(
+        self,
+        problem: NativeMorpherProblem,
+        state: NativeMappingState,
+        candidates: Sequence[Any],
+        candidate_by_operation: Mapping[str, Sequence[int]],
+        dependency: Mapping[str, Any],
+        native_edges: Sequence[tuple[str, str]],
+    ) -> np.ndarray:
+        """Return every native edge on a legal temporal source/sink corridor.
+
+        The traversal is a graph-theoretic reachability computation, not a
+        shortest-path heuristic: all source candidates, all destination
+        candidates, all directed native edges, and every latency state within
+        the configured window are considered.  Removing an edge is therefore
+        safe because no legal native temporal route can use it.
+        """
+        if not self.config.reachable_edge_pruning:
+            return np.arange(len(native_edges), dtype=int)
+        source_key, destination_key = _dependency_key(dependency)
+        edge_type = str(dependency.get("edge_type", ""))
+        distance = int(dependency.get("iteration_distance", 0) or 0)
+
+        def options(node_key: str, source: bool) -> list[tuple[str, int]]:
+            if node_key in state.placements:
+                placement_values = [state.placements[node_key]]
+            else:
+                placement_values = [
+                    candidates[index]
+                    for index in candidate_by_operation[node_key]
+                ]
+            result = []
+            for placement in placement_values:
+                resource = (
+                    problem.output_port(placement)
+                    if source
+                    else problem.operand_port(placement, edge_type)
+                )
+                latency = (
+                    placement.output_latency
+                    if source
+                    else placement.latency + distance * problem.ii
+                )
+                result.append((resource, int(latency)))
+            return result
+
+        source_options = options(source_key, True)
+        destination_options = options(destination_key, False)
+        if not source_options or not destination_options:
+            return np.zeros(0, dtype=int)
+        min_time = min(value for _, value in source_options)
+        max_time = max(value for _, value in destination_options)
+        if min_time > max_time:
+            return np.zeros(0, dtype=int)
+        resource_phase = {
+            resource_id: int(record.get("time_slot", -1))
+            for resource_id, record in problem.resources.items()
+        }
+        adjacency: dict[str, list[tuple[int, str, int]]] = {}
+        reverse: dict[str, list[tuple[int, str, int]]] = {}
+        for global_column, (left, right) in enumerate(native_edges):
+            left_phase = resource_phase[left]
+            right_phase = resource_phase[right]
+            if left_phase < 0 or right_phase < 0:
+                continue
+            delta = (right_phase - left_phase) % problem.ii
+            adjacency.setdefault(left, []).append((global_column, right, delta))
+            reverse.setdefault(right, []).append((global_column, left, delta))
+        forward: set[tuple[str, int]] = set(source_options)
+        forward = {
+            (resource, timestamp)
+            for resource, timestamp in forward
+            if min_time <= timestamp <= max_time
+        }
+        queue = list(forward)
+        cursor = 0
+        while cursor < len(queue):
+            resource, timestamp = queue[cursor]
+            cursor += 1
+            for _, nxt, delta in adjacency.get(resource, ()):
+                next_timestamp = timestamp + delta
+                if next_timestamp > max_time:
+                    continue
+                key = (nxt, next_timestamp)
+                if key not in forward:
+                    forward.add(key)
+                    queue.append(key)
+        backward: set[tuple[str, int]] = set(destination_options)
+        queue = list(backward)
+        cursor = 0
+        while cursor < len(queue):
+            resource, timestamp = queue[cursor]
+            cursor += 1
+            for _, previous, delta in reverse.get(resource, ()):
+                previous_timestamp = timestamp - delta
+                if previous_timestamp < min_time:
+                    continue
+                key = (previous, previous_timestamp)
+                if key not in backward:
+                    backward.add(key)
+                    queue.append(key)
+        relevant: set[int] = set()
+        for global_column, (left, right) in enumerate(native_edges):
+            left_phase = resource_phase[left]
+            right_phase = resource_phase[right]
+            if left_phase < 0 or right_phase < 0:
+                continue
+            delta = (right_phase - left_phase) % problem.ii
+            for resource, timestamp in forward:
+                if resource != left:
+                    continue
+                if (right, timestamp + delta) in backward:
+                    relevant.add(global_column)
+                    break
+        return np.asarray(sorted(relevant), dtype=int)
 
     @staticmethod
     def _incompatibility_cliques(
@@ -715,14 +868,18 @@ class NativeRelaxationSolver:
         canonical_seconds: float,
         cache_key: str,
         x: cp.Variable,
-        f: cp.Variable | None,
+        f: Sequence[cp.Variable] | None,
         z: cp.Variable | None,
         w: cp.Variable | None,
         candidates: Sequence[Any],
         dependencies: Sequence[Mapping[str, Any]],
         resource_ids: Sequence[str],
         edge_ids: Sequence[str],
-        incidence: sp.csr_matrix | None,
+        incidence: Sequence[sp.csr_matrix] | None,
+        commodity_columns: Sequence[np.ndarray] = (),
+        commodity_incidences: Sequence[sp.csr_matrix] = (),
+        commodity_outgoing: Sequence[sp.csr_matrix] = (),
+        commodity_incoming: Sequence[sp.csr_matrix] = (),
         endpoint_rhs: Sequence[Any],
         assignment_constraints: Sequence[tuple[str, list[int], cp.Constraint]],
         compute_constraints: Sequence[tuple[str, list[int], cp.Constraint]],
@@ -797,15 +954,15 @@ class NativeRelaxationSolver:
                 canonical_seconds=canonical_total,
                 solve_seconds=solve_seconds,
                 placement_variables=len(candidates),
-                flow_variables=0 if f is None else int(np.prod(f.shape)),
+                flow_variables=0 if f is None else int(sum(variable.shape[0] for variable in f)),
+                full_flow_variables=0 if f is None else len(dependencies) * len(edge_ids),
             )
 
         xv = np.asarray(x.value, dtype=float).reshape(-1)
-        fv = (
-            np.zeros((0, len(edge_ids)), dtype=float)
-            if f is None
-            else np.asarray(f.value, dtype=float)
-        )
+        fv = np.zeros((len(dependencies), len(edge_ids)), dtype=float)
+        if f is not None:
+            for index, (variable, columns) in enumerate(zip(f, commodity_columns)):
+                fv[index, columns] = np.asarray(variable.value, dtype=float).reshape(-1)
         assignment_residual = max(
             (
                 abs(float(xv[indices].sum()) - 1.0)
@@ -830,7 +987,11 @@ class NativeRelaxationSolver:
                     flow_residual,
                     float(
                         np.max(
-                            np.abs(incidence @ fv[index, :] - rhs_value),
+                            np.abs(
+                                incidence[index]
+                                @ np.asarray(f[index].value, dtype=float).reshape(-1)
+                                - rhs_value
+                            ),
                             initial=0.0,
                         )
                     ),
@@ -937,7 +1098,15 @@ class NativeRelaxationSolver:
             remaining_operations=len(assignment_constraints),
             remaining_dependencies=len(dependencies),
             placement_variables=len(candidates),
-            flow_variables=int(fv.size),
+            flow_variables=0 if f is None else int(sum(variable.shape[0] for variable in f)),
+            full_flow_variables=0 if f is None else len(dependencies) * len(edge_ids),
+            flow_edge_reduction_fraction=(
+                0.0
+                if f is None or not dependencies
+                else 1.0
+                - float(sum(variable.shape[0] for variable in f))
+                / float(len(dependencies) * len(edge_ids))
+            ),
             cache_key=cache_key,
             error="; ".join(errors),
         )
