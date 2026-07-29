@@ -11,6 +11,14 @@ from .native_mapper import (
     NativeRoute,
     NativeSignal,
 )
+from .native_relaxation import (
+    NativeChildEvaluation,
+    NativeExactChildEvaluator,
+    NativeRelaxationConfig,
+    NativeRelaxationResult,
+    NativeRelaxationSolver,
+    native_relaxation_cache_key,
+)
 from .native_beam_mapper import (
     DeterministicNativeBeamMapper,
     ExactChildActionEvaluator,
@@ -23,6 +31,17 @@ from .native_beam_mapper import (
     ScheduleHorizon,
     TopKExactRerankScorer,
 )
+from .native_proposal import (
+    FrozenFlowAdvantageNativeProposalScorer,
+    NativeCompatibilityReport,
+    NativeParentContextProvider,
+    NativeParentRelaxationContext,
+    NativeRelaxationParentContextProvider,
+    NativeProposalCompatibilityError,
+    NativeProposalTiming,
+    compatibility_report,
+    native_state_hash,
+)
 
 __all__ = [
     "ADAPTER_VERSION",
@@ -33,6 +52,12 @@ __all__ = [
     "NativeAction",
     "NativeContractError",
     "NativeMappingState",
+    "NativeChildEvaluation",
+    "NativeExactChildEvaluator",
+    "NativeRelaxationConfig",
+    "NativeRelaxationResult",
+    "NativeRelaxationSolver",
+    "native_relaxation_cache_key",
     "NativeMorpherProblem",
     "NativePlacement",
     "NativeRoute",
@@ -47,4 +72,13 @@ __all__ = [
     "NativeProgressEvent",
     "ScheduleHorizon",
     "TopKExactRerankScorer",
+    "FrozenFlowAdvantageNativeProposalScorer",
+    "NativeCompatibilityReport",
+    "NativeParentContextProvider",
+    "NativeParentRelaxationContext",
+    "NativeRelaxationParentContextProvider",
+    "NativeProposalCompatibilityError",
+    "NativeProposalTiming",
+    "compatibility_report",
+    "native_state_hash",
 ]
