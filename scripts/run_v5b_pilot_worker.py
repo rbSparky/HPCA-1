@@ -385,7 +385,19 @@ def _native_search(
                 class _FullExactScorer:
                     name = "full_relaxed_lookahead"
                     def score_actions(self, problem, state, actions):
-                        return child_evaluator.evaluate_children(problem, state, actions)
+                        values = [
+                            float(value)
+                            for value in child_evaluator.evaluate_children(
+                                problem, state, actions
+                            )
+                        ]
+                        finite = [value for value in values if math.isfinite(value)]
+                        if not finite:
+                            return tuple(1.0 for _ in values)
+                        lo, hi = min(finite), max(finite)
+                        margin = max(1.0, 0.25 * max(0.0, hi - lo))
+                        penalty = hi + margin
+                        return tuple(penalty if not math.isfinite(value) else value for value in values)
                 scorer = _FullExactScorer()
             else:
                 raise ValueError(f"unsupported native FlowAdvantage method {method!r}")
