@@ -1,20 +1,20 @@
-This patch is applied to the pinned Morpher_CGRA_Mapper checkout at
-9a9dce7aea521f1d5ef33686f57ca84864edb3c9.  The source checkout is vendored
-under this revision's patch directory (its upstream .git metadata is not
-available in the artifact), so the exact post-patch file digests are recorded
-in PATCH_MANIFEST.md.
+Pinned Morpher_CGRA_Mapper source change for commit
+9a9dce7aea521f1d5ef33686f57ca84864edb3c9.
 
-Changes:
-* util.h: add --seed (non-negative int, default 0) and propagate
-  `random_seed`/`has_random_seed` into arguments.
-* CGRA_xml_compiler.cpp: call SAMapper::setRandomSeed for mapping method 1
-  and print the selected seed.
-* SimulatedAnnealingMapper.h: add a seeded mt19937 and setter; route
-  acceptance random draws through it when seeded, retaining rand() behavior
-  when absent.
-* SimulatedAnnealingMapper.cpp: route node/parent selection and destination
-  shuffling through the seeded generator; random_device/time remain only on the
-  explicitly unseeded compatibility path.
+The vendored checkout has no usable upstream submodule metadata, so this
+artifact is paired with the exact post-patch source digests in
+PATCH_MANIFEST.md. Changes are applied to these files:
 
-No mapper objective, annealing schedule, move ordering, or architecture
-semantics were changed.
+* include/morpher/util/util.h: add non-negative integer --seed (default 0),
+  recording random_seed and has_random_seed.
+* src/CGRA_xml_compiler.cpp: pass the explicit seed to SAMapper for -m 1.
+* include/morpher/mapper/SimulatedAnnealingMapper.h: add a mapper-owned
+  std::mt19937, setRandomSeed(), and seeded acceptance draws.
+* src/mapper/SimulatedAnnealingMapper.cpp: route node selection, parent
+  selection, and candidate-destination shuffles through that generator when
+  seeded. random_device/time are confined to the no-seed compatibility path.
+
+The SA objective, temperature schedule, move policy, and architecture
+semantics are unchanged. The corresponding source files in this checkout are
+the authoritative implementation and their SHA-256 values are recorded in
+PATCH_MANIFEST.md.
