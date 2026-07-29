@@ -23,6 +23,7 @@ from flowadvantage.morpher_adapter.native_mapper import (
     NativeMorpherProblem,
 )
 from flowadvantage.morpher_adapter.native_proposal import (
+    DEFAULT_CHECKPOINT,
     FrozenFlowAdvantageNativeProposalScorer,
     NativeRelaxationParentContextProvider,
     compatibility_report,
@@ -110,6 +111,7 @@ def main() -> int:
         default=ROOT / "results/revision_v5b/cache/native_relaxation",
     )
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     args = parser.parse_args()
 
     dfg, mrrg, mapping = (
@@ -144,7 +146,7 @@ def main() -> int:
     )
     provider = NativeRelaxationParentContextProvider(solver)
     scorer = FrozenFlowAdvantageNativeProposalScorer(
-        provider, device=args.device
+        provider, checkpoint=args.checkpoint, device=args.device
     )
     start = time.perf_counter()
     first = np.asarray(
