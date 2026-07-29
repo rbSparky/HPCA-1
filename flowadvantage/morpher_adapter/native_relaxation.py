@@ -49,7 +49,7 @@ class NativeRelaxationConfig:
     solver_fallback: str = "OSQP"
     max_solve_seconds: float = 120.0
     feasibility_tolerance: float = 1e-7
-    cache_version: str = "native_mrrg_fractional_v2"
+    cache_version: str = "native_mrrg_fractional_v3"
 
     def __post_init__(self) -> None:
         if self.tau <= 0:
@@ -590,8 +590,6 @@ class NativeRelaxationSolver:
             * (
                 cp.sum_squares(x)
                 + cp.sum_squares(f)
-                + cp.sum_squares(z)
-                + cp.sum_squares(w)
             )
         )
         cvx_problem = cp.Problem(objective, constraints)
