@@ -178,20 +178,6 @@ class NativeRelaxationSolver:
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._memory_cache: dict[str, NativeRelaxationResult] = {}
-        # Native MRRG topology is immutable for a problem/II.  Reachability
-        # pruning used to rebuild phase maps and adjacency dictionaries for
-        # every dependency in every residual solve, which made large
-        # port-level graphs spend minutes in Python before CVXPY was called.
-        # Keep this bounded per solver process and keyed by the semantic graph
-        # identity; state occupancy never enters this index.
-        self._reachability_index_cache: dict[
-            tuple[str, int, tuple[tuple[str, str], ...]],
-            tuple[
-                dict[str, int],
-                dict[str, list[tuple[int, str, int]]],
-                dict[str, list[tuple[int, str, int]]],
-            ],
-        ] = {}
         # Native MRRG topology is immutable across states.  Reachability used
         # to rebuild phase tables and adjacency lists for every dependency;
         # retain the exact indexed graph once per problem/edge ordering.
