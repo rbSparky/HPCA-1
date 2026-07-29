@@ -20,6 +20,11 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=7200)
     parser.add_argument("--include-initialization-errors", action="store_true")
+    parser.add_argument(
+        "--include-all-errors",
+        action="store_true",
+        help="retry every ERROR row after a manifest/source repair; the parent row is preserved",
+    )
     args = parser.parse_args()
     source = json.loads(args.source.read_text(encoding="utf-8"))
     jobs = source["jobs"] if isinstance(source, dict) else source
@@ -28,10 +33,15 @@ def main() -> int:
         row for row in parent_rows
         if row.get("status") == "TIMEOUT"
         or (
-            args.include_initialization_errors
-            and row.get("status") == "ERROR"
-            and "deterministic length-prefix initialization failed: NO_LEGAL_ACTION"
-            in row.get("error_message", "")
+            row.get("status") == "ERROR"
+            and (
+                args.include_all_errors
+                or (
+                    args.include_initialization_errors
+                    and "deterministic length-prefix initialization failed: NO_LEGAL_ACTION"
+                    in row.get("error_message", "")
+                )
+            )
         )
     ]
     retry_identities = {
