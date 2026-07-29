@@ -526,6 +526,7 @@ def _native_search(
         "feature_seconds": 0.0,
         "proposal_seconds": 0.0,
         "relaxation_seconds": 0.0,
+        "stage_seconds": dict(getattr(result.metrics, "stage_seconds", {})),
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(
             getattr(parent_provider, "cache_hits", 0)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
 from .legality_bridge import validate_mapping
@@ -206,6 +206,7 @@ class NativeProgressEvent:
     failed_targets: int
     duplicate_states: int
     elapsed_seconds: float
+    stage_seconds: dict[str, float] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -229,6 +230,7 @@ class NativeBeamMetrics:
     elapsed_seconds: float
     termination: str
     legality_violations: tuple[dict[str, Any], ...]
+    stage_seconds: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -275,6 +277,7 @@ class DeterministicNativeBeamMapper:
         beam_states: int,
         counters: dict[str, int],
         start: float,
+        stage_seconds: dict[str, float] | None = None,
     ) -> None:
         if self.progress_callback is None:
             return
@@ -292,6 +295,7 @@ class DeterministicNativeBeamMapper:
                 failed_targets=counters["failed_targets"],
                 duplicate_states=counters["duplicate_states"],
                 elapsed_seconds=time.monotonic() - start,
+                stage_seconds=dict(stage_seconds or {}),
             )
         )
 
@@ -313,6 +317,12 @@ class DeterministicNativeBeamMapper:
             "duplicate_states": 0,
             "scorer_calls": 0,
         }
+        stage_seconds: dict[str, float] = {
+            "candidate_generation": 0.0,
+            "routing": 0.0,
+            "scoring": 0.0,
+            "legality": 0.0,
+        }
         sequence = 0
         beam: list[tuple[float, tuple[Any, ...], NativeMappingState]] = [
             (0.0, state.stable_key(), state)
@@ -330,6 +340,7 @@ class DeterministicNativeBeamMapper:
             beam_states=1,
             counters=counters,
             start=start,
+            stage_seconds=stage_seconds,
         )
         for operation_key in operation_order:
             if self.cancel_check is not None and self.cancel_check():
@@ -338,6 +349,7 @@ class DeterministicNativeBeamMapper:
                     counters,
                     start,
                     "CANCELLED",
+                    stage_seconds=stage_seconds,
                 )
             successor_by_key: dict[
                 tuple[Any, ...],
@@ -349,12 +361,14 @@ class DeterministicNativeBeamMapper:
                     and counters["expansions"] >= self.config.max_expansions
                 ):
                     return self._failure(
-                        beam, counters, start, "MAX_EXPANSIONS"
+                        beam, counters, start, "MAX_EXPANSIONS",
+                        stage_seconds=stage_seconds,
                     )
                 counters["expansions"] += 1
                 earliest, latest = self.config.schedule_horizon.bounds(
                     self.problem, operation_key
                 )
+                candidate_started = time.perf_counter()
                 targets = self.problem.placement_candidates(
                     operation_key,
                     earliest_latency=earliest,
@@ -362,8 +376,10 @@ class DeterministicNativeBeamMapper:
                     state=parent,
                 )
                 counters["generated_targets"] += len(targets)
+                stage_seconds["candidate_generation"] += time.perf_counter() - candidate_started
                 actions: list[NativeAction] = []
                 for target in targets:
+                    route_started = time.perf_counter()
                     routed = self.problem.actions_for_placement(
                         target,
                         parent,
@@ -375,6 +391,7 @@ class DeterministicNativeBeamMapper:
                             self.config.max_route_expansions_per_dependency
                         ),
                     )
+                    stage_seconds["routing"] += time.perf_counter() - route_started
                     if not routed:
                         counters["failed_targets"] += 1
                         continue
@@ -383,6 +400,7 @@ class DeterministicNativeBeamMapper:
                 counters["generated_actions"] += len(actions)
                 if not actions:
                     continue
+                scoring_started = time.perf_counter()
                 scores = _checked_scores(
                     self.scorer.score_actions(
                         self.problem, parent, actions
@@ -395,6 +413,7 @@ class DeterministicNativeBeamMapper:
                         self.scorer, TopKExactRerankScorer
                     ),
                 )
+                stage_seconds["scoring"] += time.perf_counter() - scoring_started
                 counters["scorer_calls"] += 1
                 ranked = sorted(
                     zip(scores, actions),
@@ -427,7 +446,10 @@ class DeterministicNativeBeamMapper:
                     else:
                         counters["duplicate_states"] += 1
             if not successor_by_key:
-                return self._failure(beam, counters, start, "NO_LEGAL_ACTION")
+                return self._failure(
+                    beam, counters, start, "NO_LEGAL_ACTION",
+                    stage_seconds=stage_seconds,
+                )
             beam = sorted(
                 successor_by_key.values(),
                 key=lambda item: (item[0], item[1], item[2].stable_key()),
@@ -441,14 +463,17 @@ class DeterministicNativeBeamMapper:
                 beam_states=len(beam),
                 counters=counters,
                 start=start,
+                stage_seconds=stage_seconds,
             )
 
         legality_failures: list[dict[str, Any]] = []
         for score, _, complete_state in beam:
             mapping = complete_state.to_mapping()
+            legality_started = time.perf_counter()
             legality = validate_mapping(
                 mapping, self.problem.dfg, self.problem.mrrg
             )
+            stage_seconds["legality"] += time.perf_counter() - legality_started
             if legality["legal"]:
                 sequence += 1
                 self._emit(
@@ -485,6 +510,7 @@ class DeterministicNativeBeamMapper:
                         elapsed_seconds=time.monotonic() - start,
                         termination="DONE",
                         legality_violations=(),
+                        stage_seconds=dict(stage_seconds),
                     ),
                 )
             legality_failures.extend(legality["violations"])
@@ -494,6 +520,7 @@ class DeterministicNativeBeamMapper:
             start,
             "INDEPENDENT_LEGALITY_FAILURE",
             legality_failures,
+            stage_seconds=stage_seconds,
         )
 
     def _failure(
@@ -503,6 +530,7 @@ class DeterministicNativeBeamMapper:
         start: float,
         termination: str,
         violations: Sequence[dict[str, Any]] = (),
+        stage_seconds: dict[str, float] | None = None,
     ) -> NativeBeamResult:
         best_state = beam[0][2] if beam else None
         return NativeBeamResult(
@@ -527,5 +555,6 @@ class DeterministicNativeBeamMapper:
                 elapsed_seconds=time.monotonic() - start,
                 termination=termination,
                 legality_violations=tuple(dict(value) for value in violations),
+                stage_seconds=dict(stage_seconds or {}),
             ),
         )
