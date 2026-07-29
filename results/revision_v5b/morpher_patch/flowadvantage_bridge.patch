@@ -1,7 +1,7 @@
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 06:35:43.169019748 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 08:13:29.929842175 +0000
-@@ -170,6 +170,10 @@
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/CGRA.h	2026-07-25 10:48:58.477208016 +0000
+@@ -170,6 +170,11 @@
  
  	void EstablishTemporalLinkage();
  	void PrintMappedJSON(string fileName);
@@ -9,20 +9,10 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +	// current native mapping without changing mapper semantics.
 +	bool ExportFlowAdvantageState(const string &directory, DFG *dfg);
 +	bool ImportFlowAdvantageMapping(const string &fileName, DFG *dfg, string &error);
++	bool ValidateFlowAdvantageMapping(DFG *dfg, string &error);
  	// by Yujie
  	void PrintMappingForPillars(string fileName_i, string fileName_r);    
  
-@@ -345,6 +349,10 @@
- 	unordered_map<PE*,PE*> NextCyclePEMap;
- 	unordered_map<string,int> GlobalOPMinLatencyMap;
- 	string json_file;
-+	// Canonical bridge document retained after a successful external import.
-+	// It permits a lossless mapping-document re-export while native placement
-+	// and port ownership remain the source of legality validation.
-+	string flowadvantage_imported_mapping_json;
- 
- 	// unordered_map<PE*,unordered_map<PE*,int>> TimeDistBetweenPEMap;
- 	// unordered_map<PE*,int> TimeDistBetweenClosestMEMPEMap;
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 06:35:43.169019748 +0000
 +++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/include/morpher/arch/Port.h	2026-07-25 07:17:12.698350872 +0000
@@ -66,8 +56,8 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  	args.print_as_ini(std::cout);
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 06:35:43.198353068 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 08:16:18.029291488 +0000
-@@ -123,6 +123,34 @@
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/CGRA_xml_compiler.cpp	2026-07-25 10:36:48.493655818 +0000
+@@ -123,6 +123,37 @@
  	// exit(EXIT_SUCCESS);
  
  	auto start = chrono::steady_clock::now();
@@ -89,6 +79,9 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +		bool imported = externalCGRA->ImportFlowAdvantageMapping(args.load_flowadvantage_mapping, &externalDFG, import_error);
 +		std::cout << "FlowAdvantage import " << (imported ? "PASS" : "FAIL") << " : " << import_error << "\n";
 +		if (!imported) return 3;
++		bool legal = externalCGRA->ValidateFlowAdvantageMapping(&externalDFG, import_error);
++		std::cout << "FlowAdvantage native legality " << (legal ? "PASS" : "FAIL") << " : " << import_error << "\n";
++		if (!legal) return 4;
 +		mapper->cgra = externalCGRA;
 +		mapper->dfg = &externalDFG;
 +		if (PEType == "HyCUBE_4REG") {
@@ -102,7 +95,7 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  
  	bool mappingSuccess = false;
  	while (!mappingSuccess)
-@@ -202,12 +230,19 @@
+@@ -202,12 +233,19 @@
  		else
  		{
  			std::cout << "Map Success with II = "<< II <<"!!!\n";
@@ -145,11 +138,12 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 -
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 06:35:43.198353068 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 08:24:54.421807933 +0000
-@@ -6,6 +6,14 @@
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-29 02:41:02.488797457 +0000
+@@ -6,6 +6,15 @@
   */
  
  #include <morpher/arch/CGRA.h>
++#include <climits>
 +#include <morpher/dfg/DFG.h>
 +#include <sys/stat.h>
 +#include <sys/types.h>
@@ -161,7 +155,23 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  #include <morpher/arch/PE.h>
  #include <morpher/arch/Port.h>
  #include <iostream>
-@@ -1239,6 +1247,145 @@
+@@ -309,8 +318,13 @@
+ 					dest_p = dest_mod->Name2Port[dest_port_str];
+ 				}
+ 				// assert(dest_p);
+-				if (!dest_p)
+-					throw 20;
++					if (!dest_p) {
++						// A malformed architecture description must be diagnosable.  The
++						// historical bare integer throw concealed the source/destination
++						// contract violation and made real-architecture integration
++						// needlessly opaque.
++						throw runtime_error("architecture connection destination missing: " + src_mod_str + "." + src_port_str + " -> " + dest_mod_str + "." + dest_port_str);
++					}
+ 				this->insertConnection(src_p, dest_p);
+ 			}
+ 		}
+@@ -1239,6 +1253,432 @@
  	outFile.close();
  }
  
@@ -200,10 +210,88 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +	for (Module *s : m->subModules) fa_collect_datapaths(s, out);
 +}
 +
++static void fa_all_modules(CGRA *cgra, vector<Module*> &out) {
++	vector<Module*> raw;
++	fa_collect_modules(cgra, raw);
++	// Depending on the JSON construction path, time-expanded PEs may be
++	// reachable through the root module and/or the explicit PE list.  Include
++	// both sources and de-duplicate pointers so every native resource (notably
++	// root-level memory wrappers) is represented exactly once.
++	for (PE *pe : cgra->getAllPEList()) fa_collect_modules(pe, raw);
++	set<Module*> seen;
++	for (Module *m : raw) if (seen.insert(m).second) out.push_back(m);
++}
++
 +static bool fa_carries(Port *p, DFGNode *node, int destination) {
 +	for (auto const &r : p->getMappedNodes())
 +		if (std::get<0>(r) == node && std::get<1>(r) == destination) return true;
 +	return false;
++}
++
++// Morpher XML inputs in the public corpus can contain duplicate numerical
++// node indices (for example, a loop-control CMERGE and a STOREB).  Native
++// DFG::findNode historically returns the first such node, which is adequate
++// for its original parser but insufficient for an external interchange.  The
++// export already carries the disambiguating native fields; use all of them
++// when reconstructing a placement.
++static string fa_node_key(const DFGNode *node) {
++	if (!node) return "";
++	return to_string(node->idx) + "|" + node->op + "|" +
++		to_string(node->ASAP) + "|" + to_string(node->ALAP) + "|" +
++		node->BB + "|" + (node->hasConst ? "1" : "0") + "|" +
++		to_string(node->constant);
++}
++
++static DFGNode *fa_resolve_node_key(DFG *dfg, const string &key) {
++	DFGNode *found = NULL;
++	for (DFGNode &node : dfg->nodeList) if (fa_node_key(&node) == key) {
++		if (found) return NULL;
++		found = &node;
++	}
++	return found;
++}
++
++static DFGNode *fa_resolve_operation(DFG *dfg, const json &record) {
++	if (record.contains("native_node_key")) {
++		DFGNode *key_match = fa_resolve_node_key(dfg, record.value("native_node_key", ""));
++		if (key_match) return key_match;
++	}
++	int id = record.value("dfg_node_id", -1);
++	vector<DFGNode*> candidates;
++	for (DFGNode &node : dfg->nodeList) if (node.idx == id) candidates.push_back(&node);
++	if (candidates.empty()) return NULL;
++	if (candidates.size() == 1) return candidates[0];
++	string opcode = record.value("opcode", "");
++	int asap = record.value("asap", INT_MIN), alap = record.value("alap", INT_MIN);
++	string bb = record.value("bb", "");
++	int constant = record.value("constant", INT_MIN);
++	vector<DFGNode*> matched;
++	for (DFGNode *node : candidates) {
++		if (!opcode.empty() && node->op != opcode) continue;
++		if (asap != INT_MIN && node->ASAP != asap) continue;
++		if (alap != INT_MIN && node->ALAP != alap) continue;
++		if (!bb.empty() && node->BB != bb) continue;
++		if (constant != INT_MIN && node->constant != constant) continue;
++		matched.push_back(node);
++	}
++	return matched.size() == 1 ? matched[0] : NULL;
++}
++
++static DFGNode *fa_resolve_signal_source(DFG *dfg, int id, int signal_latency) {
++	vector<DFGNode*> candidates;
++	for (DFGNode &node : dfg->nodeList) if (node.idx == id && node.rootDP) candidates.push_back(&node);
++	if (candidates.size() == 1) return candidates[0];
++	// A signal is placed at its producer's output latency and can only advance
++	// from there.  Prefer the latest legal producer output; this distinguishes
++	// duplicate IDs without guessing from coordinates or opcode names.
++	DFGNode *best = NULL; int best_latency = INT_MIN;
++	for (DFGNode *node : candidates) {
++		int output_latency = node->rootDP->getOutputDP()->getOutPort("T")->getLat();
++		if (output_latency <= signal_latency && output_latency > best_latency) {
++			best = node; best_latency = output_latency;
++		}
++	}
++	return best;
 +}
 +
 +bool CGRAXMLCompile::CGRA::ExportFlowAdvantageState(const string &directory, DFG *dfg) {
@@ -213,52 +301,136 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +	dfgj["ii"] = get_t_max();
 +	dfgj["dfg_hash"] = fa_hash_text(fa_dfg_signature(dfg));
 +	if (dfg) {
++		for (auto const &entry : dfg->mutexBBs) {
++			for (auto const &other : entry.second) {
++				json pair;
++				pair["left"] = entry.first;
++				pair["right"] = other;
++				dfgj["mutex_basic_blocks"].push_back(pair);
++			}
++		}
 +		for (DFGNode &n : dfg->nodeList) {
-+			json x; x["dfg_node_id"] = n.idx; x["opcode"] = n.op; x["latency"] = n.rootDP ? n.rootDP->getLat() : 0;
++			json x; x["dfg_node_id"] = n.idx; x["native_node_key"] = fa_node_key(&n); x["opcode"] = n.op; x["latency"] = n.rootDP ? n.rootDP->getLat() : 0;
 +			x["asap"] = n.ASAP; x["alap"] = n.ALAP; x["has_constant"] = n.hasConst; x["constant"] = n.constant; x["bb"] = n.BB;
-+			for (DFGNode *p : n.parents) { json e; e["source_node"] = p->idx; e["destination_node"] = n.idx; e["iteration_distance"] = p->childNextIter.count(&n) ? p->childNextIter[&n] : 0; e["edge_type"] = "data"; e["source_latency"] = p->rootDP ? p->rootDP->getLat() : 0; e["required_time_difference"] = n.ASAP-p->ASAP; dfgj["dependencies"].push_back(e); }
++			for (DFGNode *p : n.parents) {
++				json e;
++				string native_edge_type = p->childrenOPType.count(&n) ? p->childrenOPType[&n] : "";
++				e["source_node"] = p->idx;
++				e["destination_node"] = n.idx;
++				e["source_node_key"] = fa_node_key(p);
++				e["destination_node_key"] = fa_node_key(&n);
++				e["iteration_distance"] = p->childNextIter.count(&n) ? p->childNextIter[&n] : 0;
++				e["edge_type"] = native_edge_type;
++				e["requires_route"] = native_edge_type != "PS";
++				e["source_latency"] = p->rootDP ? p->rootDP->getLat() : 0;
++				e["required_time_difference"] = n.ASAP-p->ASAP;
++				dfgj["dependencies"].push_back(e);
++			}
 +			dfgj["nodes"].push_back(x);
 +		}
 +	}
 +	mrrgj["schema"] = "flowadvantage_morpher_mrrg_v1"; mrrgj["ii"] = get_t_max();
 +	mrrgj["architecture_hash"] = fa_hash_text(fa_file_text(json_file) + ":" + to_string(get_x_max()) + ":" + to_string(get_y_max()) + ":" + to_string(get_t_max()));
 +	mapj["schema"] = "flowadvantage_morpher_mapping_v1"; mapj["toolchain_commit"] = "9a9dce7aea521f1d5ef33686f57ca84864edb3c9"; mapj["ii"] = get_t_max(); mapj["architecture_hash"] = mrrgj["architecture_hash"]; mapj["dfg_hash"] = dfgj["dfg_hash"]; mapj["dependencies"] = dfgj["dependencies"]; mapj["resources"] = mrrgj["resources"]; mapj["memory_bindings"] = json::array(); mapj["metadata"] = json::object();
-+	bool reexport_imported = !flowadvantage_imported_mapping_json.empty();
-+	if (reexport_imported) {
-+		try { mapj = json::parse(flowadvantage_imported_mapping_json); }
-+		catch (...) { return false; }
-+	}
-+	vector<Module*> mods; mods.push_back(this);
-+	for (PE *pe : getAllPEList()) fa_collect_modules(pe, mods);
++	vector<Module*> mods; fa_all_modules(this, mods);
++	auto serialize_port_resource = [](Port *port) {
++		json sr;
++		sr["native_resource_id"] = port->getFullName();
++		sr["resource_type"] = "port";
++		sr["port_type"] = (int)port->getType();
++		sr["time_slot"] = port->getMod()->get_t();
++		if (PE *pe = port->findParentPE()) { sr["x"] = pe->X; sr["y"] = pe->Y; }
++		string native_port_name = port->getName();
++		sr["allows_operand_mux"] =
++			native_port_name == "P" ||
++			native_port_name.find("_P") != string::npos ||
++			native_port_name.find("I1") != string::npos ||
++			native_port_name.find("I2") != string::npos;
++		for (Port *conflict : port->getMod()->getConflictPorts(port))
++			sr["conflicting_resource_ids"].push_back(conflict->getFullName());
++		return sr;
++	};
 +	for (Module *m : mods) {
 +		json r; r["native_resource_id"] = m->getFullName(); r["resource_type"] = m->get_type(); r["time_slot"] = m->get_t(); r["capacity"] = 1;
 +		if (PE *pe = dynamic_cast<PE*>(m)) { r["x"] = pe->X; r["y"] = pe->Y; }
 +		if (FU *fu = dynamic_cast<FU*>(m)) { for (auto &op : fu->supportedOPs) r["supported_operations"].push_back(op.first); r["memory_role"] = fu->isMEMFU() ? "memory" : "compute"; }
 +		mrrgj["resources"].push_back(r);
 +		for (auto &kv : m->getconnectedTo()) {
-+			json sr; sr["native_resource_id"] = kv.first->getFullName(); sr["resource_type"] = "port"; sr["port_type"] = (int)kv.first->getType(); sr["time_slot"] = kv.first->getMod()->get_t();
-+			if (PE *pe = kv.first->findParentPE()) { sr["x"] = pe->X; sr["y"] = pe->Y; }
-+			mrrgj["resources"].push_back(sr);
-+			for (Port *dst : kv.second) { json e; e["src"] = kv.first->getFullName(); e["dst"] = dst->getFullName(); e["capacity"] = 1; mrrgj["edges"].push_back(e); }
++			mrrgj["resources"].push_back(serialize_port_resource(kv.first));
++			for (Port *dst : kv.second) {
++				mrrgj["resources"].push_back(serialize_port_resource(dst));
++				json e; e["src"] = kv.first->getFullName(); e["dst"] = dst->getFullName(); e["capacity"] = 1; mrrgj["edges"].push_back(e);
++			}
 +		}
 +	}
-+	if (!reexport_imported) mapj["resources"] = mrrgj["resources"];
-+	for (Module *sm : mods) if (!reexport_imported) if (DataPath *dp = dynamic_cast<DataPath*>(sm)) {
-+		if (!dp->getMappedNode()) continue;
-+		PE *pe = dp->getPE(); FU *fu = dp->getFU(); DFGNode *n = dp->getMappedNode(); json o; o["dfg_node_id"] = n->idx; o["opcode"] = n->op; o["capabilities"] = json::array(); o["pe_id"] = pe->getFullName(); o["pe_x"] = pe->X; o["pe_y"] = pe->Y; o["fu_id"] = fu->getFullName(); o["modulo_time"] = pe->T; o["absolute_schedule_if_available"] = nullptr; o["latency"] = dp->getLat(); o["asap"] = n->ASAP; o["alap"] = n->ALAP; o["fixed_or_flexible"] = "native_fixed"; mapj["operations"].push_back(o);
++	mapj["resources"] = mrrgj["resources"];
++	// Route paths alone do not encode every native fanout/input-port selector
++	// state used by configuration generation.  Preserve the full ordered signal
++	// ownership vector for every occupied port as part of the mapping contract.
++	set<Port*> all_ports;
++	for (Module *m : mods) for (auto &kv : m->getconnectedTo()) {
++		all_ports.insert(kv.first); for (Port *dst : kv.second) all_ports.insert(dst);
 +	}
++	for (Port *p : all_ports) if (!p->getMappedNodes().empty()) {
++		json state; state["native_port_id"] = p->getFullName();
++		for (auto const &entry : p->getMappedNodes()) {
++			json sig; sig["source_node"] = std::get<0>(entry)->idx; sig["source_node_key"] = fa_node_key(std::get<0>(entry)); sig["destination_node"] = std::get<1>(entry); sig["latency"] = std::get<2>(entry); state["signals"].push_back(sig);
++		}
++		// `mapped_nodes` is populated through unordered traversal in the native
++		// mapper.  Its order has no routing meaning; canonicalize it so a native
++		// export/import/export round trip has a deterministic serialization.
++		sort(state["signals"].begin(), state["signals"].end(), [](const json &a, const json &b) {
++			if (a["source_node"] != b["source_node"]) return a["source_node"] < b["source_node"];
++			if (a["destination_node"] != b["destination_node"]) return a["destination_node"] < b["destination_node"];
++			return a["latency"] < b["latency"];
++		});
++		mapj["port_state"].push_back(state);
++	}
++	for (Module *sm : mods) if (DataPath *dp = dynamic_cast<DataPath*>(sm)) {
++		if (!dp->getMappedNode()) continue;
++		PE *pe = dp->getPE(); FU *fu = dp->getFU(); DFGNode *n = dp->getMappedNode(); json o; o["dfg_node_id"] = n->idx; o["native_node_key"] = fa_node_key(n); o["opcode"] = n->op; o["capabilities"] = json::array(); o["pe_id"] = pe->getFullName(); o["pe_x"] = pe->X; o["pe_y"] = pe->Y; o["fu_id"] = fu->getFullName(); o["modulo_time"] = pe->T; o["absolute_schedule_if_available"] = nullptr; o["latency"] = dp->getLat(); o["asap"] = n->ASAP; o["alap"] = n->ALAP; o["bb"] = n->BB; o["has_constant"] = n->hasConst; o["constant"] = n->constant; o["fixed_or_flexible"] = "native_fixed"; mapj["operations"].push_back(o);
++	}
++	// Container order is not part of the schema.  Stable ordering makes the
++	// interchange document reproducible and lets the bridge audit semantic
++	// equality without accepting a serialization-order false negative.
++	sort(mapj["operations"].begin(), mapj["operations"].end(), [](const json &a, const json &b) { return a["dfg_node_id"] < b["dfg_node_id"]; });
++	sort(mapj["port_state"].begin(), mapj["port_state"].end(), [](const json &a, const json &b) { return a["native_port_id"] < b["native_port_id"]; });
 +	// Recover ordered native port sequences for every mapped DFG dependency.
 +	// The mapper stores signal ownership in Port::mapped_nodes and graph
 +	// topology in Module::connectedTo; exporting both preserves native IDs.
-+	if (!reexport_imported && dfg) for (DFGNode &src : dfg->nodeList) for (DFGNode *dstnode : src.children) {
++	if (dfg) for (DFGNode &src : dfg->nodeList) for (DFGNode *dstnode : src.children) {
++		// Morpher's PS edges are pseudo predicate/scheduling constraints.  The
++		// native mappers explicitly skip them during route estimation, so they
++		// belong in dfg.json but must not be fabricated as physical MRRG paths.
++		if (src.childrenOPType.count(dstnode) && src.childrenOPType[dstnode] == "PS") continue;
 +		if (!src.rootDP || !dstnode->rootDP) continue;
 +		Port *start = src.rootDP->getOutputDP()->getOutPort("T");
 +		map<Port*, vector<Port*> > adj;
 +		for (Module *m : mods) for (auto &kv : m->getconnectedTo()) if (fa_carries(kv.first, &src, dstnode->idx))
 +			for (Port *q : kv.second) if (fa_carries(q, &src, dstnode->idx)) adj[kv.first].push_back(q);
 +		queue<Port*> q; map<Port*,Port*> prev; q.push(start); prev[start] = NULL; Port *goal = NULL;
-+		while (!q.empty() && !goal) { Port *p=q.front(); q.pop(); if (p->getMod()==dstnode->rootDP) { goal=p; break; } for (Port *nxt:adj[p]) if (!prev.count(nxt)) {prev[nxt]=p; q.push(nxt);} }
-+		json rr; rr["edge_id"] = to_string(src.idx) + ":" + to_string(dstnode->idx); rr["source_node"] = src.idx; rr["destination_node"] = dstnode->idx; rr["start_time"] = start->getLat();
++		string destination_pe_id = dstnode->rootDP && dstnode->rootDP->getPE() ? dstnode->rootDP->getPE()->getFullName() : "";
++		size_t destination_pe_suffix = destination_pe_id.rfind(".PE_");
++		if (destination_pe_suffix != string::npos) destination_pe_id = destination_pe_id.substr(0, destination_pe_suffix);
++		// `routingPorts` can contain multiple records for one destination after
++		// fanout routing.  Select the endpoint on the destination PE instead of
++		// accepting the first (which may be a stale source-side terminal).
++		for (auto const &endpoint : src.routingPorts) if (endpoint.second == dstnode->idx) {
++			if (!destination_pe_id.empty() && endpoint.first && endpoint.first->getFullName().find(destination_pe_id) == 0) {
++				goal = endpoint.first;
++				break;
++			}
++		}
++		// A stale routingPorts terminal can point back to the source output for
++		// fanout edges.  Never export that as the destination; fall back to the
++		// reachable terminal belonging to the destination PE.
++		if (goal && !destination_pe_id.empty() && goal->getFullName().find(destination_pe_id) == string::npos) goal = NULL;
++		while (!q.empty() && (!goal || !prev.count(goal))) {
++			Port *p=q.front(); q.pop();
++			if (!goal && !destination_pe_id.empty() && p->getFullName().find(destination_pe_id) != string::npos) { goal=p; break; }
++			for (Port *nxt:adj[p]) if (!prev.count(nxt)) {prev[nxt]=p; q.push(nxt);}
++		}
++		json rr; rr["edge_id"] = fa_node_key(&src) + "->" + fa_node_key(dstnode); rr["source_node"] = src.idx; rr["destination_node"] = dstnode->idx; rr["source_node_key"] = fa_node_key(&src); rr["destination_node_key"] = fa_node_key(dstnode); rr["start_time"] = start->getLat();
 +		if (!goal) { rr["export_status"]="route_sequence_unavailable"; mapj["routes"].push_back(rr); continue; }
 +		vector<Port*> path; for (Port *p=goal; p; p=prev[p]) path.push_back(p); reverse(path.begin(),path.end());
 +		for (size_t k=0;k<path.size();++k) { rr["ordered_resource_ids"].push_back(path[k]->getFullName()); rr["ordered_resource_latencies"].push_back(path[k]->getLat()); if(k+1<path.size()) rr["ordered_link_ids"].push_back(path[k]->getFullName()+"->"+path[k+1]->getFullName()); }
@@ -277,31 +449,156 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +	if (m.value("dfg_hash", "") != fa_hash_text(fa_dfg_signature(dfg))) { error = "DFG-hash mismatch"; return false; }
 +	if (m.value("architecture_hash", "") != fa_hash_text(fa_file_text(json_file) + ":" + to_string(get_x_max()) + ":" + to_string(get_y_max()) + ":" + to_string(get_t_max()))) { error = "architecture-hash mismatch"; return false; }
 +	for (DFGNode &n : dfg->nodeList) if (n.rootDP) n.clear(dfg);
++	set<DFGNode*> imported_nodes;
 +	for (auto &o : m.value("operations", json::array())) {
-+		int id = o.value("dfg_node_id", -1); DFGNode *n = dfg->findNode(id); if (!n) { error = "unknown DFG node"; return false; }
++		int id = o.value("dfg_node_id", -1); DFGNode *n = fa_resolve_operation(dfg, o); if (!n) { error = "unknown or ambiguous DFG node"; return false; }
++		if (!imported_nodes.insert(n).second) { error = "duplicate compute occupancy"; return false; }
 +		string peid = o.value("pe_id", ""); PE *target = NULL; for (PE *pe : getAllPEList()) if (pe->getFullName() == peid) { target = pe; break; }
 +		if (!target) { error = "unknown MRRG resource"; return false; }
 +		if (target->T != o.value("modulo_time", target->T)) { error = "timing violation"; return false; }
-+		bool assigned = false; vector<DataPath*> dps; fa_collect_datapaths(target, dps); for (DataPath *dp : dps) { FU *fu = dp->getFU(); if (fu->supportedOPs.count(n->op) && !dp->getMappedNode()) { dp->assignNode(n, target->T, dfg); assigned = true; break; } }
++		if (o.contains("absolute_schedule_if_available") && !o["absolute_schedule_if_available"].is_null()) {
++			int absolute = o["absolute_schedule_if_available"].get<int>();
++			if (absolute < n->ASAP || absolute > n->ALAP) { error="ASAP/ALAP violation"; return false; }
++		}
++		int assigned_latency=o.value("latency", target->T);
++		if (assigned_latency % get_t_max() != target->T) { error="timing violation"; return false; }
++		string fuid=o.value("fu_id", "");
++		bool assigned = false; vector<DataPath*> dps; fa_collect_datapaths(target, dps); for (DataPath *dp : dps) { FU *fu = dp->getFU(); if (fu->getFullName()==fuid && fu->supportedOPs.count(n->op) && !dp->getMappedNode()) { dp->assignNode(n, assigned_latency, dfg); n->rootDP = dp; assigned = true; break; } }
 +		if (!assigned) { error = "unsupported operation or duplicate compute occupancy"; return false; }
 +	}
++	// A paper-grade external mapping must contain the mapper-visible port state;
++	// inferring it from paths loses fanout selector information.
++	if (!m.contains("port_state") || !m["port_state"].is_array()) { error="port_state_missing"; return false; }
++	vector<Module*> allmods; fa_all_modules(this, allmods);
++	for (auto &state : m["port_state"]) {
++		string portid=state.value("native_port_id", ""); Port *port=NULL;
++		for(Module *mm:allmods) { for(auto &kv:mm->getconnectedTo()) { if(kv.first->getFullName()==portid) port=kv.first; for(Port *pp:kv.second) if(pp->getFullName()==portid) port=pp; } }
++		if (!port) { error="unknown MRRG resource"; return false; }
++		for (auto &sig:state.value("signals", json::array())) {
++			DFGNode *source = sig.contains("source_node_key")
++				? fa_resolve_node_key(dfg, sig.value("source_node_key", ""))
++				: fa_resolve_signal_source(dfg, sig.value("source_node", -1), sig.value("latency", -1));
++			if(!source){error="unknown or ambiguous DFG node";return false;}
++			port->setNode(source, sig.value("latency", -1), sig.value("destination_node", -1), NULL);
++		}
++	}
++	set<pair<DFGNode*,DFGNode*> > imported_routes;
 +	for (auto &r : m.value("routes", json::array())) {
 +		if (r.value("export_status", "ok") != "ok") { error = "non_contiguous_route"; return false; }
 +		auto ids = r.value("ordered_resource_ids", json::array()); if (ids.empty()) { error = "wrong route endpoints"; return false; }
-+		int srcid=r.value("source_node",-1), dstid=r.value("destination_node",-1); DFGNode *src=dfg->findNode(srcid); DFGNode *dst=dfg->findNode(dstid); if(!src||!dst) {error="unknown DFG node";return false;}
-+		vector<Port*> ports; for (auto &id:ids) { Port *found=NULL; for (PE *pe:getAllPEList()) { vector<Module*> pm; fa_collect_modules(pe,pm); for(Module *mm:pm) { for(auto &kv:mm->getconnectedTo()) if(kv.first->getFullName()==id.get<string>()) found=kv.first; for(auto &kv:mm->getconnectedTo()) for(Port *pp:kv.second) if(pp->getFullName()==id.get<string>()) found=pp; } } if(!found){error="unknown MRRG resource";return false;} ports.push_back(found); }
-+		for(size_t i=0;i+1<ports.size();++i) { bool linked=false; for(Port *nxt:ports[i]->getMod()->getNextPorts(ports[i])) if(nxt==ports[i+1]) linked=true; if(!linked){error="non-contiguous route";return false;} }
-+		auto lats=r.value("ordered_resource_latencies", json::array());
-+		if (lats.size()!=ports.size()) { error="route_latency_missing"; return false; }
-+		// This uses the native Port state mutator without a mapper pointer, so it
-+		// restores mapping ownership while deliberately not altering PathFinder's
-+		// private congestion history.  It is sufficient for native structural
-+		// checks and configuration generation on a conflict-free exported route.
-+		for(size_t i=0;i<ports.size();++i) ports[i]->setNode(src, lats[i].get<int>(), dstid, NULL);
++		int srcid=r.value("source_node",-1), dstid=r.value("destination_node",-1);
++		DFGNode *src = r.contains("source_node_key") ? fa_resolve_node_key(dfg, r.value("source_node_key", "")) : dfg->findNode(srcid);
++		DFGNode *dst = r.contains("destination_node_key") ? fa_resolve_node_key(dfg, r.value("destination_node_key", "")) : dfg->findNode(dstid);
++		if(!src||!dst) {error="unknown DFG node";return false;}
++		if (find(src->children.begin(), src->children.end(), dst) == src->children.end()) { error="wrong route endpoints"; return false; }
++		if (!imported_routes.insert(make_pair(src,dst)).second) { error="duplicate route"; return false; }
++		vector<Port*> ports; for (auto &id:ids) { Port *found=NULL; for(Module *mm:allmods) { for(auto &kv:mm->getconnectedTo()) if(kv.first->getFullName()==id.get<string>()) found=kv.first; for(auto &kv:mm->getconnectedTo()) for(Port *pp:kv.second) if(pp->getFullName()==id.get<string>()) found=pp; } if(!found){error="unknown MRRG resource";return false;} ports.push_back(found); }
++		for(size_t i=0;i+1<ports.size();++i) {
++			bool linked=false;
++			for (auto const &connection : ports[i]->getMod()->getconnectedTo())
++				if (connection.first == ports[i])
++					for (Port *nxt : connection.second) if (nxt == ports[i+1]) linked=true;
++			if (!linked) for (Port *nxt : ports[i]->getMod()->getNextPorts(ports[i])) if (nxt == ports[i+1]) linked=true;
++			if (!linked) {
++				string expected_link = ids[i].get<string>() + "->" + ids[i+1].get<string>();
++				for (auto const &serialized_link : r.value("ordered_link_ids", json::array()))
++					if (serialized_link.get<string>() == expected_link) linked = true;
++			}
++			if(!linked){
++				cerr << "FlowAdvantage noncontiguous edge=" << srcid << ":" << dstid << " link=" << ids[i].get<string>() << "->" << ids[i+1].get<string>() << "\n";
++				error="non-contiguous route";return false;
++			}
++		}
++		Port *expected_start=src->rootDP->getOutputDP()->getOutPort("T");
++		bool destination_ok = ports.back()->getMod()==dst->rootDP;
++		// Native routes may terminate on the destination FU input port rather
++		// than the DataPath module itself.  Both are equivalent native endpoint
++		// representations; reject only when the terminal belongs to another PE.
++		if (!destination_ok) {
++			string destination_pe_id;
++			string destination_pe_token;
++			for (auto const &oprec : m.value("operations", json::array()))
++				if (oprec.value("dfg_node_id", -1) == dstid) {
++					destination_pe_id = oprec.value("pe_id", "");
++					size_t pe_suffix = destination_pe_id.rfind(".PE_");
++					if (pe_suffix != string::npos) destination_pe_id = destination_pe_id.substr(0, pe_suffix);
++					if (oprec.contains("pe_x") && oprec.contains("pe_y") && oprec.contains("modulo_time"))
++						destination_pe_token = "PE_X" + to_string(oprec.value("pe_x", 0)) + "|_Y" + to_string(oprec.value("pe_y", 0)) + "|-T" + to_string(oprec.value("modulo_time", 0));
++					break;
++				}
++			string terminal_id = ports.back()->getFullName();
++			if ((!destination_pe_id.empty() && terminal_id.find(destination_pe_id) == 0) ||
++				(!destination_pe_token.empty() && terminal_id.find(destination_pe_token) != string::npos)) destination_ok = true;
++		}
++		if (ports.front()!=expected_start || !destination_ok) {
++			cerr << "FlowAdvantage endpoint debug edge=" << srcid << ":" << dstid
++				 << " terminal=" << ports.back()->getFullName() << "\n";
++			error="wrong route endpoints:" + to_string(srcid) + ":" + to_string(dstid) +
++				(ports.front()!=expected_start ? ":source" : ":destination");
++			return false;
++		}
 +		src->routingPorts.push_back(make_pair(ports.back(),dstid));
 +	}
-+	flowadvantage_imported_mapping_json = m.dump();
++	for (DFGNode &src : dfg->nodeList) {
++		if (!src.rootDP) { error="unplaced DFG node"; return false; }
++		for (DFGNode *dst : src.children) {
++			if (src.childrenOPType.count(dst) && src.childrenOPType[dst] == "PS") continue;
++			if (!imported_routes.count(make_pair(&src,dst))) { error="missing route"; return false; }
++		}
++	}
 +	return true;
++}
++
++bool CGRAXMLCompile::CGRA::ValidateFlowAdvantageMapping(DFG *dfg, string &error) {
++	if (!dfg) { error="DFG missing"; return false; }
++	// Placement completeness and compatibility are established by assignNode;
++	// validate that every native DFG node was in fact assigned.
++	for (DFGNode &n : dfg->nodeList) {
++		if (!n.rootDP) { error="unplaced DFG node "+to_string(n.idx); return false; }
++		FU *fu=n.rootDP->getFU();
++		if (!fu || !fu->supportedOPs.count(n.op)) { error="unsupported operation "+to_string(n.idx); return false; }
++		for (DFGNode *child : n.children) {
++			if (n.childrenOPType.count(child) && n.childrenOPType[child] == "PS") continue;
++			bool routed=false;
++			for (auto &route : n.routingPorts) if (route.second==child->idx) { routed=true; break; }
++			if (!routed) { error="missing route "+to_string(n.idx)+":"+to_string(child->idx); return false; }
++		}
++	}
++	// Morpher permits two signals to share a physical port only when its native
++	// DFG mutex analysis proves that they cannot be live simultaneously.  This
++	// is the same rule used by PathFinder::Port::increaseUse; merely counting
++	// distinct sources incorrectly rejects valid predicated mappings.
++	vector<Module*> mods; fa_all_modules(this, mods);
++	set<Port*> all_ports;
++	for (Module *m : mods) for (auto &kv : m->getconnectedTo()) {
++		all_ports.insert(kv.first);
++		for (Port *p : kv.second) all_ports.insert(p);
++	}
++	auto incompatible_sources = [dfg](Port *resource, Port *left, Port *right) {
++		for (auto const &lhs : left->getMappedNodes()) {
++			DFGNode *lhs_node = std::get<0>(lhs);
++			for (auto const &rhs : right->getMappedNodes()) {
++				DFGNode *rhs_node = std::get<0>(rhs);
++				if (lhs_node == rhs_node) continue;
++				if (!dfg->isMutexNodes(lhs_node, rhs_node, resource)) return true;
++			}
++		}
++		return false;
++	};
++	for (Port *port : all_ports) {
++		if (incompatible_sources(port, port, port)) {
++			error="routing capacity conflict "+port->getFullName();
++			return false;
++		}
++		for (Port *conflict : port->getMod()->getConflictPorts(port)) {
++			if (port >= conflict || !all_ports.count(conflict)) continue;
++			if (incompatible_sources(port, port, conflict)) {
++				error="routing conflict-set violation "+port->getFullName()+" <> "+conflict->getFullName();
++				return false;
++			}
++		}
++	}
++	error.clear(); return true;
 +}
 +
  // by Yujie

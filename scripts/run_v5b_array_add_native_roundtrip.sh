@@ -6,10 +6,11 @@ set -euo pipefail
 # DFG, memory allocation, and trace artifacts therefore originate from the
 # same compiler invocation.
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OUT_DIR="$ROOT_DIR/results/revision_v5b/reference_mappings/array_add/A0_full_pipeline"
+OUT_DIR="${FLOW_OUT_DIR:-$ROOT_DIR/results/revision_v5b/reference_mappings/array_add/A0_full_pipeline}"
+MORPHER_IMAGE="${MORPHER_IMAGE:-quotientflow-morpher-v5b-native}"
 mkdir -p "$OUT_DIR"
 
-docker run --rm -v "$OUT_DIR:/out" quotientflow-morpher-v5b-native bash -lc '
+docker run --rm -v "$OUT_DIR:/out" "$MORPHER_IMAGE" bash -lc '
 set -euo pipefail
 cd /home/user/morpher
 bash build_all.sh
