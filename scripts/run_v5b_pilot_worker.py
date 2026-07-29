@@ -50,8 +50,7 @@ PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
 # relaxation and frozen checkpoint below; unknown names are rejected rather
 # than silently mapped to a proxy.
 FLOW_METHODS = frozenset({
-    "flow_proposal", "proposal", "flow_top4", "top4",
-    "full_relaxed_lookahead", "full",
+    "flow_proposal", "flow_top4", "full_relaxed_lookahead",
 })
 UNSUPPORTED_METHODS = frozenset({"dual", "dual_linear"})
 SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"}) | FLOW_METHODS
@@ -375,13 +374,13 @@ def _native_search(
             device=spec.get("device"),
         )
         timing_provider = proposal
-        if method in {"flow_proposal", "proposal"}:
+        if method == "flow_proposal":
             scorer = proposal
         else:
             child_evaluator = NativeExactChildEvaluator(solver)
-            if method in {"flow_top4", "top4"}:
+            if method == "flow_top4":
                 scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
-            elif method in {"full", "full_relaxed_lookahead"}:
+            elif method == "full_relaxed_lookahead":
                 class _FullExactScorer:
                     name = "full_relaxed_lookahead"
                     def score_actions(self, problem, state, actions):
