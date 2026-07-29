@@ -357,6 +357,9 @@ def _native_search(
         NativeRelaxationConfig(
             tau=float(spec.get("relaxation_tau", 1e-3)),
             max_solve_seconds=float(spec.get("relaxation_timeout", 120.0)),
+            reachable_edge_pruning=bool(
+                spec.get("reachable_edge_pruning", True)
+            ),
         ),
         cache_dir=Path(spec.get("relaxation_cache_dir", "results/revision_v5b/cache/native_relaxation")),
     )
