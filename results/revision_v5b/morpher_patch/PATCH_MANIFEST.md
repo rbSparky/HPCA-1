@@ -68,3 +68,19 @@ defers the check instead of dereferencing a null placement. External mapping
 import then verifies both the original recurrence-anchor inequality and every
 loop-carried dependency's destination-latency bound against the complete
 ordered route latency sequence.
+
+## Deterministic simulated annealing seed
+
+`simulated_annealing_seed.patch` documents the pinned-source changes. The
+post-patch source digests are:
+
+* `include/morpher/mapper/SimulatedAnnealingMapper.h`: `1d0e204a35df263a2c58b3ccb0ccdb263c427564144d42d7d591c00291586be4`
+* `src/mapper/SimulatedAnnealingMapper.cpp`: `68c9e2396835930e07a801b6e6bfc4aac634c39a3a5bd59e2981b38ab2baa494`
+* `include/morpher/util/util.h`: `87c25101c4d85f0f3cbc794795c81bbe8e034bc82b14ca37f2e0caa0f9deaa7c`
+* `src/CGRA_xml_compiler.cpp`: `13685c3d1c4821f5c6be5312974cdd80e477f1b50ab00114e3a3d166e994b4d5`
+
+`--seed N` is accepted for native simulated annealing (`-m 1`); `N=0` or
+omission preserves the pre-patch random-device/time behavior. When present,
+acceptance draws, node selection, parent selection, and candidate-destination
+shuffles all consume the mapper-owned `std::mt19937` stream. No SA objective,
+temperature schedule, or architecture behavior changed.
