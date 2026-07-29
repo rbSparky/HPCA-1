@@ -51,14 +51,38 @@ PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
 # relaxation and frozen checkpoint below; unknown names are rejected rather
 # than silently mapped to a proxy.
 FLOW_METHODS = frozenset({
-    "flow_proposal", "flow_top4", "full_relaxed_lookahead",
+    "dual_linear", "flow_proposal", "flow_top4", "full_relaxed_lookahead",
 })
 UNSUPPORTED_METHODS = frozenset({
     # Long-form canonical methods are wired below.  These legacy aliases are
     # retained only to fail closed rather than silently changing semantics.
-    "dual", "dual_linear", "proposal", "top4", "full",
+    "dual", "proposal", "top4", "full",
+    "noparent_proposal", "noparent_top4",
 })
 SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"}) | FLOW_METHODS
+
+
+def _optional_float(value: Any, default: float) -> float:
+    """Parse a manifest float while treating CSV empty cells as absent."""
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return float(default)
+    return float(value)
+
+
+def _optional_bool(value: Any, default: bool) -> bool:
+    """Parse booleans without the ``bool("False")`` manifest trap."""
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"invalid boolean manifest value {value!r}")
 
 
 def _resolve_mapper(spec: dict[str, Any]) -> Path:
@@ -82,7 +106,7 @@ def _preflight(spec: dict[str, Any]) -> tuple[Path | None, Path, Path]:
     method = str(spec["method"])
     if method in UNSUPPORTED_METHODS:
         raise NotImplementedError(
-            "dual-linear native scorer is not wired to this worker; refusing "
+            "unsupported legacy alias or true no-parent checkpoint: refusing "
             "to synthesize a score"
         )
     if method not in SUPPORTED_EXECUTORS:
@@ -354,60 +378,72 @@ def _native_search(
     )
     from flowadvantage.morpher_adapter.native_proposal import (
         FrozenFlowAdvantageNativeProposalScorer,
+        NativeDualLinearActionScorer,
         NativeRelaxationParentContextProvider,
     )
 
     method = str(spec["method"])
-    solver = NativeRelaxationSolver(
-        NativeRelaxationConfig(
-            tau=float(spec.get("relaxation_tau", 1e-3)),
-            max_solve_seconds=float(spec.get("relaxation_timeout", 120.0)),
-            reachable_edge_pruning=bool(
-                spec.get("reachable_edge_pruning", True)
-            ),
-        ),
-        cache_dir=Path(spec.get("relaxation_cache_dir", "results/revision_v5b/cache/native_relaxation")),
-    )
+    solver = None
     scorer: NativeActionScorer
     timing_provider = None
     child_evaluator = None
     if method == "length":
         scorer = LengthActionScorer()
     else:
+        solver = NativeRelaxationSolver(
+            NativeRelaxationConfig(
+                tau=_optional_float(spec.get("relaxation_tau"), 1e-3),
+                max_solve_seconds=_optional_float(
+                    spec.get("relaxation_timeout"), 120.0
+                ),
+                reachable_edge_pruning=_optional_bool(
+                    spec.get("reachable_edge_pruning"), True
+                ),
+            ),
+            cache_dir=Path(
+                spec.get("relaxation_cache_dir")
+                or "results/revision_v5b/cache/native_relaxation"
+            ),
+        )
         parent_provider = NativeRelaxationParentContextProvider(solver)
-        proposal = FrozenFlowAdvantageNativeProposalScorer(
+        parent_provider = NativeRelaxationParentContextProvider(solver)
+        if method == "dual_linear":
+            scorer = NativeDualLinearActionScorer(parent_provider)
+            timing_provider = None
+        else:
+            proposal = FrozenFlowAdvantageNativeProposalScorer(
             parent_provider,
             checkpoint=Path(spec.get("checkpoint_path", "results/revision_v3/checkpoints/residual_gnn_seed_23.pt")),
             checkpoint_sha256=str(spec.get("checkpoint_hash", "468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8")),
             device=spec.get("device"),
-        )
-        timing_provider = proposal
-        if method == "flow_proposal":
-            scorer = proposal
-        else:
-            child_evaluator = NativeExactChildEvaluator(solver)
-            if method == "flow_top4":
-                scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
-            elif method == "full_relaxed_lookahead":
-                class _FullExactScorer:
-                    name = "full_relaxed_lookahead"
-                    def score_actions(self, problem, state, actions):
-                        values = [
-                            float(value)
-                            for value in child_evaluator.evaluate_children(
-                                problem, state, actions
-                            )
-                        ]
-                        finite = [value for value in values if math.isfinite(value)]
-                        if not finite:
-                            return tuple(1.0 for _ in values)
-                        lo, hi = min(finite), max(finite)
-                        margin = max(1.0, 0.25 * max(0.0, hi - lo))
-                        penalty = hi + margin
-                        return tuple(penalty if not math.isfinite(value) else value for value in values)
-                scorer = _FullExactScorer()
+            )
+            timing_provider = proposal
+            if method == "flow_proposal":
+                scorer = proposal
             else:
-                raise ValueError(f"unsupported native FlowAdvantage method {method!r}")
+                child_evaluator = NativeExactChildEvaluator(solver)
+                if method == "flow_top4":
+                    scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
+                elif method == "full_relaxed_lookahead":
+                    class _FullExactScorer:
+                        name = "full_relaxed_lookahead"
+                        def score_actions(self, problem, state, actions):
+                            values = [
+                                float(value)
+                                for value in child_evaluator.evaluate_children(
+                                    problem, state, actions
+                                )
+                            ]
+                            finite = [value for value in values if math.isfinite(value)]
+                            if not finite:
+                                return tuple(1.0 for _ in values)
+                            lo, hi = min(finite), max(finite)
+                            margin = max(1.0, 0.25 * max(0.0, hi - lo))
+                            penalty = hi + margin
+                            return tuple(penalty if not math.isfinite(value) else value for value in values)
+                    scorer = _FullExactScorer()
+                else:
+                    raise ValueError(f"unsupported native FlowAdvantage method {method!r}")
 
     def callback(event: Any) -> None:
         progress.update(

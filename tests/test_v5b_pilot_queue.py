@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from scripts.run_v5b_pilot_queue import freeze_job, recover
+from scripts.run_v5b_pilot_worker import _optional_bool, _optional_float
 from scripts.v5b_pilot_queue_common import (
     atomic_csv,
     atomic_json,
@@ -162,6 +163,17 @@ def test_atomic_manifest_roundtrip(tmp_path):
     loaded = read_manifest(path)
     assert loaded[0]["work_id"] == "one"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_worker_manifest_defaults_survive_csv_empty_cells():
+    assert _optional_float("", 0.001) == 0.001
+    assert _optional_float(None, 120.0) == 120.0
+    assert _optional_float("3.5", 1.0) == 3.5
+    assert _optional_bool("", True) is True
+    assert _optional_bool("False", True) is False
+    assert _optional_bool("yes", False) is True
+    with pytest.raises(ValueError, match="invalid boolean"):
+        _optional_bool("maybe", True)
 
 
 def test_legacy_method_alias_fails_preflight_instead_of_returning_proxy(
