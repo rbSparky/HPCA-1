@@ -56,6 +56,7 @@ PATHFINDER_METHODS = frozenset(
         "lisa",
     }
 )
+SA_METHODS = frozenset({"native_simulated_annealing", "simulated_annealing"})
 # These names are deliberately explicit.  They are backed by the native
 # relaxation and frozen checkpoint below; unknown names are rejected rather
 # than silently mapped to a proxy.
@@ -171,6 +172,7 @@ def _native_pathfinder(
     scratch.mkdir(parents=True)
     export = scratch / "export"
     export.mkdir()
+    is_sa = str(spec["method"]) in SA_METHODS
     command = [
         str(mapper),
         "-d",
@@ -186,10 +188,14 @@ def _native_pathfinder(
         "-t",
         str(spec["pe_type"]),
         "-m",
-        str(spec.get("native_method", 0)),
+        "1" if is_sa else str(spec.get("native_method", 0)),
+        "-r",
+        str(int(spec.get("native_max_iter", 30))),
         "--dump-flowadvantage-state",
         str(export),
     ]
+    if is_sa:
+        command.extend(["--seed", str(int(spec["seed"]))])
     progress["stage"] = "native_pathfinder"
     started = time.monotonic()
     stdout_path = scratch / "native.stdout.log"
@@ -343,42 +349,59 @@ def _native_search(
 
     problem = NativeMorpherProblem(dfg, mrrg, reference_mapping=witness)
 
-    # Native relaxation is intentionally conditioned on a valid partial state;
-    # solving the completely symmetric root can create an unbounded port-level
-    # flow model.  Seed the beam with one deterministic witness placement.  In
-    # production manifests this state is exported by the state collector; the
-    # reference witness is used here only for the frozen pilot corpus.
-    anchor_count = int(spec.get("anchor_operations", 1))
-    anchor_keys = set(problem.operation_order()[: max(0, anchor_count)])
-    if anchor_keys:
-        partial = dict(witness)
-        partial["operations"] = [
-            record for record in witness.get("operations", [])
-            if str(record.get("native_node_key", record.get("dfg_node"))) in anchor_keys
-        ]
-        partial["routes"] = [
-            record for record in witness.get("routes", [])
-            if str(record.get("source_node_key", record.get("source_node"))) in anchor_keys
-            and str(record.get("destination_node_key", record.get("destination_node"))) in anchor_keys
-        ]
-        partial["port_state"] = []
-        anchor_ids = {
-            int(problem.nodes[key]["dfg_node_id"]) for key in anchor_keys
-        }
-        for record in witness.get("port_state", []):
-            signals = [
-                signal for signal in record.get("signals", [])
-                if str(signal.get("source_node_key", signal.get("source_node"))) in anchor_keys
-                and (
-                    str(signal.get("destination_node_key", "")) in anchor_keys
-                    or int(signal.get("destination_node", -1)) in anchor_ids
-                )
-            ]
-            if signals:
-                partial["port_state"].append({**record, "signals": signals})
-        initial_state = NativeMappingState.from_mapping(problem, partial)
-    else:
-        initial_state = NativeMappingState(problem)
+    # Parent relaxations require a valid non-root state.  Construct that state
+    # from the empty mapping with the deterministic length beam; the native
+    # witness is used only as latency metadata by NativeMorpherProblem and is
+    # never read for placements, routes, or occupancy.
+    initialization_policy = str(
+        spec.get("initialization_policy", "deterministic_length_prefix")
+    )
+    if initialization_policy != "deterministic_length_prefix":
+        raise ValueError(
+            "only deterministic_length_prefix is executable; witness prefixes "
+            "are prohibited for paper mapping experiments"
+        )
+    depth_fraction = float(spec.get("initialization_depth_fraction", 0.40))
+    if not 0.0 < depth_fraction < 1.0:
+        raise ValueError("initialization_depth_fraction must lie in (0,1)")
+    total_operations = len(problem.nodes)
+    prefix_depth = max(1, min(total_operations - 1, int(math.ceil(
+        depth_fraction * total_operations
+    ))))
+    prefix_started = time.monotonic()
+    from flowadvantage.morpher_adapter.native_beam_mapper import (
+        DeterministicNativeBeamMapper,
+    )
+    prefix_mapper = DeterministicNativeBeamMapper(
+        problem,
+        scorer=LengthActionScorer(),
+        config=NativeBeamConfig(
+            beam_width=int(spec.get("beam_width") or 4),
+            k_paths=int(spec.get("k_paths") or 4),
+            per_state_action_limit=(
+                int(spec["action_limit"]) if spec.get("action_limit") else None
+            ),
+            max_expansions=(
+                int(spec["max_expansions"]) if spec.get("max_expansions") else None
+            ),
+            stop_after_mapped_operations=prefix_depth,
+        ),
+        progress_callback=lambda event: progress.update({
+            "stage": "initialization_" + event.stage.lower(),
+            "mapped_operations": event.depth,
+            "expansions": event.expansions,
+            "candidate_actions": event.generated_actions,
+            "routing_attempts": event.routed_actions + event.failed_targets,
+        }),
+    )
+    prefix_result = prefix_mapper.map(initial_state=NativeMappingState(problem))
+    if prefix_result.metrics.termination != "PARTIAL_DEPTH_REACHED" or prefix_result.state is None:
+        raise RuntimeError(
+            "deterministic length-prefix initialization failed: "
+            f"{prefix_result.metrics.termination}"
+        )
+    initial_state = prefix_result.state
+    initialization_seconds = time.monotonic() - prefix_started
 
     from flowadvantage.morpher_adapter.native_relaxation import (
         NativeExactChildEvaluator,
@@ -526,6 +549,10 @@ def _native_search(
         "feature_seconds": 0.0,
         "proposal_seconds": 0.0,
         "relaxation_seconds": 0.0,
+        "initialization_policy": initialization_policy,
+        "initialization_depth_fraction": depth_fraction,
+        "initialization_mapped_operations": prefix_depth,
+        "initialization_seconds": initialization_seconds,
         "stage_seconds": dict(getattr(result.metrics, "stage_seconds", {})),
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(
