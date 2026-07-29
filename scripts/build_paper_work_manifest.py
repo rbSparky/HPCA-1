@@ -8,7 +8,7 @@ metadata as an explicit blocker.
 """
 from __future__ import annotations
 
-import argparse, hashlib, json, os, subprocess
+import argparse, hashlib, json, math, os, subprocess
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,16 @@ def _canonical_dirs(root: Path, kernel: str, arch: str) -> list[Path]:
                 continue
             if mapping.get("dfg_hash") != dfg.get("dfg_hash") or mapping.get("architecture_hash") != mrrg.get("architecture_hash"):
                 continue
+            resource_ids = {
+                str(resource.get("native_resource_id", resource.get("resource_id", resource.get("id", ""))))
+                for resource in mrrg.get("resources", [])
+            }
+            if not resource_ids or any(
+                str(edge.get("src")) not in resource_ids
+                or str(edge.get("dst")) not in resource_ids
+                for edge in mrrg.get("edges", [])
+            ):
+                continue
             priority = 0 if directory.name == "export" else (1 if directory.name == path.name else 2)
             candidates.append((priority, str(directory), directory))
     return [item[2] for item in sorted(candidates)]
@@ -90,9 +100,13 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
     for (kernel, arch), directory in sorted(refs.items()):
         dfg = directory / "dfg.json"; mrrg = directory / "mrrg.json"; witness = directory / "mapping.json"
         dfg_doc = json.loads(dfg.read_text()); mrrg_doc = json.loads(mrrg.read_text())
-        # A deep witness anchor is required by the native relaxation; its value
-        # is derived from the actual operation contract, never guessed.
-        anchor = max(1, len(dfg_doc.get("nodes", [])) - 1)
+        # Prefix depth is frozen before execution and built from the empty
+        # state by the deterministic length beam.  It is not copied from the
+        # native witness mapping.
+        anchor = max(1, min(
+            len(dfg_doc.get("nodes", [])) - 1,
+            int(math.ceil(0.40 * len(dfg_doc.get("nodes", []))))
+        ))
         for method in METHODS:
             if method == "full_relaxed_lookahead" and (kernel, arch) not in {("array_add", "A0_hycube4x4"), ("array_add", "A1_stdnoc4x4"), ("array_add", "A2_hycube4x4_mem_variant"), ("gemm_nt", "A0_hycube4x4"), ("gemm_nt", "A1_stdnoc4x4"), ("gemm_nt", "A2_hycube4x4_mem_variant"), ("fix_fft", "A0_hycube4x4"), ("fix_fft", "A1_stdnoc4x4"), ("fix_fft", "A2_hycube4x4_mem_variant")}:
                 continue
@@ -106,9 +120,11 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
                 "anchor_operations": anchor, "checkpoint_path": str(checkpoint),
                 # This worker mode starts from a deterministic witness prefix;
                 # it is not a full root-to-complete mapping experiment.
-                "evaluation_mode": "anchored_partial_state_completion",
+                "evaluation_mode": "deterministic_length_prefix_then_complete",
                 "anchor_depth_fraction": anchor / max(1, len(dfg_doc.get("nodes", []))),
-                "full_end_to_end": False,
+                "initialization_policy": "deterministic_length_prefix",
+                "initialization_depth_fraction": 0.40,
+                "full_end_to_end": True,
                 "checkpoint_hash": sha256_file(checkpoint) if checkpoint.is_file() else "",
                 "source_commit": source_commit, "source_tree_hash": source_hash,
                 "beam_width": 4, "k_paths": 4, "action_limit": 24,
@@ -129,7 +145,7 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
             jobs.append(row)
     jobs.sort(key=lambda r: (r["architecture"], r["kernel"], r["method"]))
     jobs_path = out / "jobs.json"; jobs_path.write_text(json.dumps({"jobs": jobs}, indent=2) + "\n")
-    metadata = {"schema": "flowadvantage_paper_manifest_v2", "frozen": True, "source_commit": source_commit, "source_tree_hash": source_hash, "jobs": len(jobs), "blockers": blockers, "selected": {f"{k[0]}/{k[1]}": str(v) for k,v in refs.items()}, "unsupported_methods": ["native_pathfinder", "simulated_annealing", "flow_noparent_top4"], "launch": args.launch, "evaluation_mode": "anchored_partial_state_completion", "full_end_to_end": False, "protocol_note": "anchor_operations is a witness prefix, not a claim of complete end-to-end mapper coverage"}
+    metadata = {"schema": "flowadvantage_paper_manifest_v2", "frozen": True, "source_commit": source_commit, "source_tree_hash": source_hash, "jobs": len(jobs), "blockers": blockers, "selected": {f"{k[0]}/{k[1]}": str(v) for k,v in refs.items()}, "unsupported_methods": ["native_pathfinder", "simulated_annealing", "flow_noparent_top4"], "launch": args.launch, "evaluation_mode": "deterministic_length_prefix_then_complete", "initialization_policy": "deterministic_length_prefix", "initialization_depth_fraction": 0.40, "full_end_to_end": True, "protocol_note": "the native witness is latency metadata only; placements/routes are built from the empty state by the frozen deterministic length prefix"}
     (out / "manifest_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     return jobs_path, out / "manifest_metadata.json"
 

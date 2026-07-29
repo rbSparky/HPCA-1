@@ -152,6 +152,34 @@ def test_beam_mapper_is_bitwise_deterministic_on_fixed17_partial(fixed17):
     assert first.metrics.generated_actions == second.metrics.generated_actions
 
 
+def test_deterministic_length_prefix_is_empty_state_and_witness_independent(fixed17):
+    problem, _mapping = fixed17
+    config = NativeBeamConfig(
+        beam_width=2,
+        k_paths=2,
+        max_route_combinations_per_target=2,
+        per_state_action_limit=4,
+        max_expansions=20,
+        stop_after_mapped_operations=3,
+    )
+    first = DeterministicNativeBeamMapper(
+        problem, scorer=LengthActionScorer(), config=config
+    ).map(NativeMappingState(problem))
+    # A second problem is constructed from the same native DFG/MRRG but no
+    # witness state is supplied.  Prefix identity must be determined solely by
+    # the deterministic length beam.
+    second_problem = NativeMorpherProblem(problem.dfg, problem.mrrg)
+    second = DeterministicNativeBeamMapper(
+        second_problem, scorer=LengthActionScorer(), config=config
+    ).map(NativeMappingState(second_problem))
+    assert first.metrics.termination == "PARTIAL_DEPTH_REACHED"
+    assert first.metrics.mapped_operations == 3
+    assert first.metrics.legal
+    assert first.mapping is not None
+    assert first.state.stable_key() == second.state.stable_key()
+    assert first.mapping == second.mapping
+
+
 def test_mapper_requires_concrete_batch_scorer(fixed17):
     problem, _ = fixed17
     with pytest.raises(TypeError, match="concrete NativeActionScorer"):

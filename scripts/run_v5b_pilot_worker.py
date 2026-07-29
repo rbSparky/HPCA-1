@@ -553,6 +553,9 @@ def _native_search(
         "initialization_depth_fraction": depth_fraction,
         "initialization_mapped_operations": prefix_depth,
         "initialization_seconds": initialization_seconds,
+        "initialization_expansions": prefix_result.metrics.expansions,
+        "initialization_generated_actions": prefix_result.metrics.generated_actions,
+        "initialization_routing_attempts": prefix_result.metrics.routed_actions + prefix_result.metrics.failed_targets,
         "stage_seconds": dict(getattr(result.metrics, "stage_seconds", {})),
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(

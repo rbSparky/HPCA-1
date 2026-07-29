@@ -172,6 +172,7 @@ class NativeBeamConfig:
     max_route_expansions_per_dependency: int = 1_000_000
     per_state_action_limit: int | None = None
     max_expansions: int | None = None
+    stop_after_mapped_operations: int | None = None
     schedule_horizon: ScheduleHorizon = ScheduleHorizon()
 
     def __post_init__(self) -> None:
@@ -190,6 +191,8 @@ class NativeBeamConfig:
             raise ValueError("per-state action limit must be positive")
         if self.max_expansions is not None and self.max_expansions <= 0:
             raise ValueError("max_expansions must be positive")
+        if self.stop_after_mapped_operations is not None and self.stop_after_mapped_operations <= 0:
+            raise ValueError("stop_after_mapped_operations must be positive")
 
 
 @dataclass(frozen=True)
@@ -465,6 +468,38 @@ class DeterministicNativeBeamMapper:
                 start=start,
                 stage_seconds=stage_seconds,
             )
+            if (
+                self.config.stop_after_mapped_operations is not None
+                and len(beam[0][2].placements)
+                >= self.config.stop_after_mapped_operations
+            ):
+                partial = beam[0][2]
+                return NativeBeamResult(
+                    state=partial,
+                    mapping=partial.to_mapping(),
+                    metrics=NativeBeamMetrics(
+                        success=False,
+                        legal=True,
+                        mapped_operations=len(partial.placements),
+                        total_operations=len(self.problem.nodes),
+                        expansions=counters["expansions"],
+                        generated_targets=counters["generated_targets"],
+                        generated_actions=counters["generated_actions"],
+                        routed_actions=counters["routed_actions"],
+                        failed_targets=counters["failed_targets"],
+                        duplicate_states=counters["duplicate_states"],
+                        scorer_calls=counters["scorer_calls"],
+                        beam_score=beam[0][0],
+                        route_cost=float(sum(
+                            max(0, len(route.resource_ids) - 1)
+                            for route in partial.routes.values()
+                        )),
+                        elapsed_seconds=time.monotonic() - start,
+                        termination="PARTIAL_DEPTH_REACHED",
+                        legality_violations=(),
+                        stage_seconds=dict(stage_seconds),
+                    ),
+                )
 
         legality_failures: list[dict[str, Any]] = []
         for score, _, complete_state in beam:
