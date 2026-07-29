@@ -46,19 +46,15 @@ from scripts.v5b_pilot_queue_common import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
-SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"})
-DECLARED_BUT_UNWIRED = frozenset(
-    {
-        "dual",
-        "dual_linear",
-        "proposal",
-        "flow_proposal",
-        "top4",
-        "flow_top4",
-        "full",
-        "full_relaxed_lookahead",
-    }
-)
+# These names are deliberately explicit.  They are backed by the native
+# relaxation and frozen checkpoint below; unknown names are rejected rather
+# than silently mapped to a proxy.
+FLOW_METHODS = frozenset({
+    "flow_proposal", "proposal", "flow_top4", "top4",
+    "full_relaxed_lookahead", "full",
+})
+UNSUPPORTED_METHODS = frozenset({"dual", "dual_linear"})
+SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"}) | FLOW_METHODS
 
 
 def _resolve_mapper(spec: dict[str, Any]) -> Path:
@@ -80,10 +76,10 @@ def _resolve_mapper(spec: dict[str, Any]) -> Path:
 
 def _preflight(spec: dict[str, Any]) -> tuple[Path | None, Path, Path]:
     method = str(spec["method"])
-    if method in DECLARED_BUT_UNWIRED:
+    if method in UNSUPPORTED_METHODS:
         raise NotImplementedError(
-            f"{method} is declared but has no paper-grade native scorer/evaluator "
-            "binding; refusing to synthesize proxy results"
+            "dual-linear native scorer is not wired to this worker; refusing "
+            "to synthesize a score"
         )
     if method not in SUPPORTED_EXECUTORS:
         raise ValueError(f"unknown pilot method {method!r}")
@@ -274,15 +270,16 @@ def _native_pathfinder(
     }
 
 
-def _native_length(
+def _native_search(
     spec: dict[str, Any],
     dfg_path: Path,
     architecture_path: Path,
     artifact_directory: Path,
     progress: dict[str, Any],
 ) -> dict[str, Any]:
-    # For native Python search, dfg_path and architecture_path are canonical
-    # JSON documents and a sibling mapping.json is the latency witness only.
+    # The Python mapper consumes the exact native DFG/MRRG dump.  A reference
+    # mapping is required only for legacy dumps whose FU latency metadata is
+    # absent; it is a witness, never a score or a mapping oracle.
     dfg = json.loads(dfg_path.read_text(encoding="utf-8"))
     mrrg = json.loads(architecture_path.read_text(encoding="utf-8"))
     witness_path = Path(spec.get("reference_mapping_path", ""))
@@ -296,12 +293,102 @@ def _native_length(
     witness = json.loads(witness_path.read_text(encoding="utf-8"))
     from flowadvantage.morpher_adapter.native_beam_mapper import (
         DeterministicNativeBeamMapper,
+        NativeActionScorer,
         LengthActionScorer,
         NativeBeamConfig,
+        TopKExactRerankScorer,
     )
-    from flowadvantage.morpher_adapter.native_mapper import NativeMorpherProblem
+    from flowadvantage.morpher_adapter.native_mapper import (
+        NativeMappingState,
+        NativeMorpherProblem,
+    )
+    from flowadvantage.morpher_adapter.legality_bridge import validate_mapping
 
     problem = NativeMorpherProblem(dfg, mrrg, reference_mapping=witness)
+
+    # Native relaxation is intentionally conditioned on a valid partial state;
+    # solving the completely symmetric root can create an unbounded port-level
+    # flow model.  Seed the beam with one deterministic witness placement.  In
+    # production manifests this state is exported by the state collector; the
+    # reference witness is used here only for the frozen pilot corpus.
+    anchor_count = int(spec.get("anchor_operations", 1))
+    anchor_keys = set(problem.operation_order()[: max(0, anchor_count)])
+    if anchor_keys:
+        partial = dict(witness)
+        partial["operations"] = [
+            record for record in witness.get("operations", [])
+            if str(record.get("native_node_key", record.get("dfg_node"))) in anchor_keys
+        ]
+        partial["routes"] = [
+            record for record in witness.get("routes", [])
+            if str(record.get("source_node_key", record.get("source_node"))) in anchor_keys
+            and str(record.get("destination_node_key", record.get("destination_node"))) in anchor_keys
+        ]
+        partial["port_state"] = []
+        anchor_ids = {
+            int(problem.nodes[key]["dfg_node_id"]) for key in anchor_keys
+        }
+        for record in witness.get("port_state", []):
+            signals = [
+                signal for signal in record.get("signals", [])
+                if str(signal.get("source_node_key", signal.get("source_node"))) in anchor_keys
+                and (
+                    str(signal.get("destination_node_key", "")) in anchor_keys
+                    or int(signal.get("destination_node", -1)) in anchor_ids
+                )
+            ]
+            if signals:
+                partial["port_state"].append({**record, "signals": signals})
+        initial_state = NativeMappingState.from_mapping(problem, partial)
+    else:
+        initial_state = NativeMappingState(problem)
+
+    from flowadvantage.morpher_adapter.native_relaxation import (
+        NativeExactChildEvaluator,
+        NativeRelaxationConfig,
+        NativeRelaxationSolver,
+    )
+    from flowadvantage.morpher_adapter.native_proposal import (
+        FrozenFlowAdvantageNativeProposalScorer,
+        NativeRelaxationParentContextProvider,
+    )
+
+    method = str(spec["method"])
+    solver = NativeRelaxationSolver(
+        NativeRelaxationConfig(
+            tau=float(spec.get("relaxation_tau", 1e-3)),
+            max_solve_seconds=float(spec.get("relaxation_timeout", 120.0)),
+        ),
+        cache_dir=Path(spec.get("relaxation_cache_dir", "results/revision_v5b/cache/native_relaxation")),
+    )
+    scorer: NativeActionScorer
+    timing_provider = None
+    child_evaluator = None
+    if method == "length":
+        scorer = LengthActionScorer()
+    else:
+        parent_provider = NativeRelaxationParentContextProvider(solver)
+        proposal = FrozenFlowAdvantageNativeProposalScorer(
+            parent_provider,
+            checkpoint=Path(spec.get("checkpoint_path", "results/revision_v3/checkpoints/residual_gnn_seed_23.pt")),
+            checkpoint_sha256=str(spec.get("checkpoint_hash", "468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8")),
+            device=spec.get("device"),
+        )
+        timing_provider = proposal
+        if method in {"flow_proposal", "proposal"}:
+            scorer = proposal
+        else:
+            child_evaluator = NativeExactChildEvaluator(solver)
+            if method in {"flow_top4", "top4"}:
+                scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
+            elif method in {"full", "full_relaxed_lookahead"}:
+                class _FullExactScorer:
+                    name = "full_relaxed_lookahead"
+                    def score_actions(self, problem, state, actions):
+                        return child_evaluator.evaluate_children(problem, state, actions)
+                scorer = _FullExactScorer()
+            else:
+                raise ValueError(f"unsupported native FlowAdvantage method {method!r}")
 
     def callback(event: Any) -> None:
         progress.update(
@@ -311,12 +398,15 @@ def _native_length(
                 "expansions": event.expansions,
                 "candidate_actions": event.generated_actions,
                 "routing_attempts": event.routed_actions + event.failed_targets,
+                "parent_solves": int(getattr(solver, "solve_count", 0)),
+                "child_solves": len(getattr(child_evaluator, "last_evaluations", ())) if child_evaluator else 0,
             }
         )
 
+    started = time.monotonic()
     mapper = DeterministicNativeBeamMapper(
         problem,
-        scorer=LengthActionScorer(),
+        scorer=scorer,
         config=NativeBeamConfig(
             beam_width=int(spec.get("beam_width") or 4),
             k_paths=int(spec.get("k_paths") or 4),
@@ -329,8 +419,7 @@ def _native_length(
         ),
         progress_callback=callback,
     )
-    started = time.monotonic()
-    result = mapper.map()
+    result = mapper.map(initial_state=initial_state)
     elapsed = time.monotonic() - started
     payload = {
         "status": "DONE" if result.metrics.success else "VALID_MAPPING_FAILURE",
@@ -358,9 +447,36 @@ def _native_length(
         "proposal_seconds": 0.0,
         "relaxation_seconds": 0.0,
     }
+    if timing_provider is not None and timing_provider.last_timing is not None:
+        timing = timing_provider.last_timing
+        payload.update({
+            "feature_seconds": timing.feature_seconds,
+            "proposal_seconds": timing.total_seconds,
+            "gnn_encoding_seconds": timing.dfg_encoding_seconds + timing.mrrg_encoding_seconds,
+            "gnn_action_head_seconds": timing.action_head_seconds,
+        })
+    if child_evaluator is not None:
+        records = child_evaluator.last_evaluations
+        payload.update({
+            "child_solves": len(records),
+            "child_cache_hits": sum(bool(r.cache_hit) for r in records),
+            "child_relaxation_seconds": sum(float(r.solve_seconds) for r in records),
+        })
     if result.mapping is not None:
         artifact_directory.mkdir(parents=True)
         atomic_json(artifact_directory / "mapping.json", result.mapping)
+        # Publish the complete canonical bundle, not just a mapper-local
+        # object.  Consumers can independently re-run the bridge checker and
+        # compare hashes without relying on process memory.
+        atomic_json(artifact_directory / "dfg.json", dfg)
+        atomic_json(artifact_directory / "mrrg.json", mrrg)
+        legality = validate_mapping(result.mapping, dfg, mrrg)
+        if not legality.get("legal", False):
+            raise RuntimeError(
+                "FlowAdvantage mapping export failed independent legality: "
+                + json.dumps(legality.get("violations", [])[:5], sort_keys=True)
+            )
+        atomic_json(artifact_directory / "legality.json", legality)
         payload["artifact_directory"] = str(artifact_directory)
         payload["mapping_hash"] = sha256_file(artifact_directory / "mapping.json")
     return payload
@@ -427,7 +543,7 @@ def main() -> int:
                 spec, mapper, dfg, architecture, artifact_directory, progress
             )
         else:
-            row = _native_length(
+            row = _native_search(
                 spec, dfg, architecture, artifact_directory, progress
             )
         row.update(
