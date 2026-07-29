@@ -60,6 +60,16 @@ class NativeProposalCompatibilityError(ValueError):
     """The native contract cannot be represented by the frozen model."""
 
 
+class NativeNoParentUnavailable(NotImplementedError):
+    """Raised when no solver-free checkpoint is available.
+
+    The frozen revision-v3 checkpoint was trained with parent dual/objective
+    inputs.  Supplying zeros or reusing parent prices would silently turn it
+    into a proxy, so the real pilot must fail closed until a true no-parent
+    model is trained on declared development data.
+    """
+
+
 @dataclass(frozen=True)
 class NativeParentRelaxationContext:
     """Exact parent-relaxation values consumed by the selected hybrid model.
@@ -204,6 +214,51 @@ class NativeRelaxationParentContextProvider:
         )
         context.validate(problem, state)
         return context
+
+
+class NativeDualLinearActionScorer(NativeActionScorer):
+    """First-order native dual baseline from one exact parent relaxation.
+
+    The scorer uses native resource IDs and native DataPath IDs directly.  A
+    repeated value on multiple fanout routes consumes one source/resource
+    capacity; distinct source values consume separately.  The score is the
+    prescribed immediate route cost plus parent compute/routing shadow prices.
+    """
+
+    name = "dual_linear_native"
+
+    def __init__(self, parent_provider: NativeParentContextProvider) -> None:
+        if not isinstance(parent_provider, NativeParentContextProvider):
+            raise TypeError("dual-linear scorer requires a parent provider")
+        self.parent_provider = parent_provider
+
+    def score_actions(
+        self,
+        problem: NativeMorpherProblem,
+        state: NativeMappingState,
+        actions: Sequence[NativeAction],
+    ) -> Sequence[float]:
+        parent = self.parent_provider.parent_context(problem, state)
+        parent.validate(problem, state)
+        scores: list[float] = []
+        for action in actions:
+            immediate = float(
+                sum(max(0, len(route.resource_ids) - 1) for route in action.routes)
+            )
+            # Count each source value once per native resource, preserving
+            # Morpher broadcast semantics while charging distinct fanouts.
+            consumed: set[tuple[str, str]] = set()
+            routing = 0.0
+            for route in action.routes:
+                for resource_id in route.resource_ids:
+                    key = (route.source_key, resource_id)
+                    if key in consumed:
+                        continue
+                    consumed.add(key)
+                    routing += float(parent.routing_duals.get(resource_id, 0.0))
+            compute = float(parent.compute_duals.get(action.placement.dp_id, 0.0))
+            scores.append(immediate + routing + compute)
+        return tuple(scores)
 
 
 @dataclass(frozen=True)
@@ -1479,6 +1534,7 @@ def _add_relative_features(
 
 __all__ = [
     "DEFAULT_CHECKPOINT",
+    "NativeDualLinearActionScorer",
     "FrozenFlowAdvantageNativeProposalScorer",
     "NATIVE_PROPOSAL_SCHEMA",
     "NativeCompatibilityReport",
@@ -1486,6 +1542,7 @@ __all__ = [
     "NativeRelaxationParentContextProvider",
     "NativeParentRelaxationContext",
     "NativeProposalCompatibilityError",
+    "NativeNoParentUnavailable",
     "NativeProposalTiming",
     "PARENT_CONTEXT_SCHEMA",
     "SELECTED_CHECKPOINT_SHA256",

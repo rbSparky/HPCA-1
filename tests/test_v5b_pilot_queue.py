@@ -62,6 +62,23 @@ def test_manifest_freezes_all_input_hashes(tmp_path, monkeypatch):
     assert len(row["architecture_hash"]) == 64
     assert len(row["toolchain_hash"]) == 64
     assert row["config_hash"] == config_hash(row)
+
+
+def test_manifest_accepts_native_simulated_annealing_executor(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.run_v5b_pilot_queue._git_commit", lambda: "a" * 40
+    )
+    row = freeze_job(
+        _job(
+            tmp_path,
+            method="native_simulated_annealing",
+            native_method=1,
+        ),
+        tmp_path / "output",
+    )
+    assert row["method"] == "native_simulated_annealing"
+    assert row["native_method"] == 1
+    assert row["toolchain_hash"]
     assert row["work_id"].endswith(row["config_hash"][:16])
 
 
@@ -183,7 +200,10 @@ def test_canonical_flow_methods_are_not_legacy_aliases():
     assert {"proposal", "top4", "full"}.isdisjoint(SUPPORTED_EXECUTORS)
 
 
-@pytest.mark.parametrize("method", ["dual", "proposal", "top4", "full"])
+@pytest.mark.parametrize(
+    "method",
+    ["dual", "proposal", "top4", "full", "noparent_proposal", "noparent_top4"],
+)
 def test_paper_method_aliases_are_strict_unwired_hooks(
     tmp_path, monkeypatch, method
 ):

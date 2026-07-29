@@ -146,7 +146,14 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
                 "anchor_operations value; shallow/root relaxation is not a valid fallback"
             )
     row["reachable_edge_pruning"] = row.get("reachable_edge_pruning", True)
-    if row["method"] in {"native_pathfinder", "pathfinder"}:
+    if row["method"] in {
+        "native_pathfinder",
+        "pathfinder",
+        "native_simulated_annealing",
+        "simulated_annealing",
+        "native_lisa",
+        "lisa",
+    }:
         mapper = _mapper_path(row)
         if not mapper.is_file():
             raise FileNotFoundError(f"native mapper binary not found: {mapper}")

@@ -34,6 +34,8 @@ from .native_beam_mapper import (
 from .native_proposal import (
     FrozenFlowAdvantageNativeProposalScorer,
     NativeCompatibilityReport,
+    NativeDualLinearActionScorer,
+    NativeNoParentUnavailable,
     NativeParentContextProvider,
     NativeParentRelaxationContext,
     NativeRelaxationParentContextProvider,
@@ -74,6 +76,8 @@ __all__ = [
     "TopKExactRerankScorer",
     "FrozenFlowAdvantageNativeProposalScorer",
     "NativeCompatibilityReport",
+    "NativeDualLinearActionScorer",
+    "NativeNoParentUnavailable",
     "NativeParentContextProvider",
     "NativeParentRelaxationContext",
     "NativeRelaxationParentContextProvider",

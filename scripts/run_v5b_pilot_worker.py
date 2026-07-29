@@ -46,7 +46,16 @@ from scripts.v5b_pilot_queue_common import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
+PATHFINDER_METHODS = frozenset(
+    {
+        "native_pathfinder",
+        "pathfinder",
+        "native_simulated_annealing",
+        "simulated_annealing",
+        "native_lisa",
+        "lisa",
+    }
+)
 # These names are deliberately explicit.  They are backed by the native
 # relaxation and frozen checkpoint below; unknown names are rejected rather
 # than silently mapped to a proxy.
@@ -406,16 +415,25 @@ def _native_search(
             ),
         )
         parent_provider = NativeRelaxationParentContextProvider(solver)
-        parent_provider = NativeRelaxationParentContextProvider(solver)
         if method == "dual_linear":
             scorer = NativeDualLinearActionScorer(parent_provider)
             timing_provider = None
         else:
             proposal = FrozenFlowAdvantageNativeProposalScorer(
-            parent_provider,
-            checkpoint=Path(spec.get("checkpoint_path", "results/revision_v3/checkpoints/residual_gnn_seed_23.pt")),
-            checkpoint_sha256=str(spec.get("checkpoint_hash", "468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8")),
-            device=spec.get("device"),
+                parent_provider,
+                checkpoint=Path(
+                    spec.get(
+                        "checkpoint_path",
+                        "results/revision_v3/checkpoints/residual_gnn_seed_23.pt",
+                    )
+                ),
+                checkpoint_sha256=str(
+                    spec.get(
+                        "checkpoint_hash",
+                        "468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8",
+                    )
+                ),
+                device=spec.get("device"),
             )
             timing_provider = proposal
             if method == "flow_proposal":

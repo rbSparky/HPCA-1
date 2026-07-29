@@ -20,6 +20,7 @@ from flowadvantage.morpher_adapter.native_mapper import (
 )
 from flowadvantage.morpher_adapter.native_proposal import (
     FrozenFlowAdvantageNativeProposalScorer,
+    NativeDualLinearActionScorer,
     NativeParentRelaxationContext,
     NativeProposalCompatibilityError,
     NativeRelaxationParentContextProvider,
@@ -256,6 +257,26 @@ def test_fixed17_scores_are_deterministic_finite_and_batched(
 
 def test_native_proposal_satisfies_mapper_scorer_protocol(scorer):
     assert isinstance(scorer, NativeActionScorer)
+
+
+def test_dual_linear_scores_exact_native_actions_without_model(native_batch):
+    problem, state, actions = native_batch
+    provider = _DeterministicParentProvider()
+    scorer = NativeDualLinearActionScorer(provider)
+    values = np.asarray(scorer.score_actions(problem, state, actions))
+    assert isinstance(scorer, NativeActionScorer)
+    assert values.shape == (len(actions),)
+    assert np.isfinite(values).all()
+    for action, value in zip(actions, values):
+        immediate = sum(max(0, len(route.resource_ids) - 1) for route in action.routes)
+        consumed = {(route.source_key, resource_id)
+                    for route in action.routes
+                    for resource_id in route.resource_ids}
+        expected = immediate + sum(
+            provider.parent_context(problem, state).routing_duals[resource_id]
+            for _, resource_id in consumed
+        ) + provider.parent_context(problem, state).compute_duals[action.placement.dp_id]
+        assert value == pytest.approx(expected)
 
 
 def test_mixed_operation_batch_is_rejected(native_batch, scorer):
