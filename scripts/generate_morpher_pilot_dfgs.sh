@@ -8,6 +8,10 @@ set -euo pipefail
 IMAGE="${MORPHER_GENERATOR_IMAGE:-quotientflow-morpher-v5-original-patched}"
 OUTPUT="${1:-results/revision_v5b/generated_dfg}"
 OUTPUT_ABS="$(realpath -m "${OUTPUT}")"
+if [[ -d "${OUTPUT_ABS}" ]] && find "${OUTPUT_ABS}" -mindepth 1 -print -quit | grep -q .; then
+  echo "refusing to overwrite nonempty DFG artifact directory: ${OUTPUT_ABS}" >&2
+  exit 2
+fi
 mkdir -p "${OUTPUT_ABS}"
 
 docker image inspect "${IMAGE}" >/dev/null
@@ -46,7 +50,13 @@ for kernel in array_cond hpcg trmm; do
   test -s "${kernel}_PartPredDFG.xml"
   cp "${kernel}_PartPredDFG.xml" "${output_dir}/"
   cp "${kernel}_PartPredDFG.dot" "${output_dir}/"
-  sha256sum "${kernel}_PartPredDFG.xml" \
-    > "${output_dir}/SHA256SUMS"
+  test -s "${kernel}_mem_alloc.txt"
+  cp "${kernel}_mem_alloc.txt" "${output_dir}/"
+  (
+    cd "${output_dir}"
+    sha256sum "${kernel}_PartPredDFG.xml" \
+      "${kernel}_PartPredDFG.dot" "${kernel}_mem_alloc.txt" \
+      > SHA256SUMS
+  )
 done
 '
