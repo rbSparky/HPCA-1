@@ -117,7 +117,7 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
                 "dfg_path": str(dfg.resolve()), "architecture_path": str(mrrg.resolve()),
                 "reference_mapping_path": str(witness.resolve()), "dfg_hash": sha256_file(dfg),
                 "architecture_hash": sha256_file(mrrg), "reference_mapping_hash": sha256_file(witness),
-                "anchor_operations": anchor, "checkpoint_path": str(checkpoint),
+                "checkpoint_path": str(checkpoint),
                 # The complete algorithm starts at the empty state, constructs
                 # a frozen deterministic length prefix, then applies the
                 # selected completion policy.

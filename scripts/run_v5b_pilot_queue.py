@@ -140,10 +140,30 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
     if row.get("method") in {"flow_proposal", "flow_top4", "full_relaxed_lookahead"}:
         if not row.get("checkpoint_path"):
             raise ValueError("FlowAdvantage work items require checkpoint_path")
-        if not row.get("anchor_operations"):
+    if row.get("method") in {
+        "length",
+        "dual_linear",
+        "flow_proposal",
+        "flow_top4",
+        "full_relaxed_lookahead",
+    }:
+        if row.get("initialization_policy") != "deterministic_length_prefix":
             raise ValueError(
-                "FlowAdvantage work items require a frozen deep partial-state "
-                "anchor_operations value; shallow/root relaxation is not a valid fallback"
+                "Python native mapping requires the frozen "
+                "deterministic_length_prefix initialization policy"
+            )
+        depth_fraction = float(row.get("initialization_depth_fraction", 0.0))
+        if not 0.0 < depth_fraction < 1.0:
+            raise ValueError(
+                "initialization_depth_fraction must be frozen in (0,1)"
+            )
+        if row.get("full_end_to_end") is not True:
+            raise ValueError(
+                "paper mapping jobs must explicitly declare full_end_to_end=true"
+            )
+        if row.get("anchor_operations"):
+            raise ValueError(
+                "witness anchor_operations is prohibited by the paper protocol"
             )
     row["reachable_edge_pruning"] = row.get("reachable_edge_pruning", True)
     if row["method"] in {
