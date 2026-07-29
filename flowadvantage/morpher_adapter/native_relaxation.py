@@ -178,6 +178,27 @@ class NativeRelaxationSolver:
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._memory_cache: dict[str, NativeRelaxationResult] = {}
+        # Native MRRG topology is immutable for a problem/II.  Reachability
+        # pruning used to rebuild phase maps and adjacency dictionaries for
+        # every dependency in every residual solve, which made large
+        # port-level graphs spend minutes in Python before CVXPY was called.
+        # Keep this bounded per solver process and keyed by the semantic graph
+        # identity; state occupancy never enters this index.
+        self._reachability_index_cache: dict[
+            tuple[str, int, tuple[tuple[str, str], ...]],
+            tuple[
+                dict[str, int],
+                dict[str, list[tuple[int, str, int]]],
+                dict[str, list[tuple[int, str, int]]],
+            ],
+        ] = {}
+        # Native MRRG topology is immutable across states.  Reachability used
+        # to rebuild phase tables and adjacency lists for every dependency;
+        # retain the exact indexed graph once per problem/edge ordering.
+        self._reachability_graph_cache: dict[
+            tuple[int, tuple[tuple[str, str], ...]],
+            tuple[dict[str, int], dict[str, tuple[tuple[int, str, int], ...]], dict[str, tuple[tuple[int, str, int], ...]]],
+        ] = {}
         self.solve_calls = 0
         self.cache_hits = 0
         self.cache_misses = 0
@@ -745,20 +766,30 @@ class NativeRelaxationSolver:
         max_time = max(value for _, value in destination_options)
         if min_time > max_time:
             return np.zeros(0, dtype=int)
-        resource_phase = {
-            resource_id: int(record.get("time_slot", -1))
-            for resource_id, record in problem.resources.items()
-        }
-        adjacency: dict[str, list[tuple[int, str, int]]] = {}
-        reverse: dict[str, list[tuple[int, str, int]]] = {}
-        for global_column, (left, right) in enumerate(native_edges):
-            left_phase = resource_phase[left]
-            right_phase = resource_phase[right]
-            if left_phase < 0 or right_phase < 0:
-                continue
-            delta = (right_phase - left_phase) % problem.ii
-            adjacency.setdefault(left, []).append((global_column, right, delta))
-            reverse.setdefault(right, []).append((global_column, left, delta))
+        graph_key = (id(problem), tuple(native_edges))
+        cached_graph = self._reachability_graph_cache.get(graph_key)
+        if cached_graph is None:
+            resource_phase = {
+                resource_id: int(record.get("time_slot", -1))
+                for resource_id, record in problem.resources.items()
+            }
+            adjacency_mut: dict[str, list[tuple[int, str, int]]] = {}
+            reverse_mut: dict[str, list[tuple[int, str, int]]] = {}
+            for global_column, (left, right) in enumerate(native_edges):
+                left_phase = resource_phase[left]
+                right_phase = resource_phase[right]
+                if left_phase < 0 or right_phase < 0:
+                    continue
+                delta = (right_phase - left_phase) % problem.ii
+                adjacency_mut.setdefault(left, []).append((global_column, right, delta))
+                reverse_mut.setdefault(right, []).append((global_column, left, delta))
+            cached_graph = (
+                resource_phase,
+                {key: tuple(value) for key, value in adjacency_mut.items()},
+                {key: tuple(value) for key, value in reverse_mut.items()},
+            )
+            self._reachability_graph_cache[graph_key] = cached_graph
+        resource_phase, adjacency, reverse = cached_graph
         forward: set[tuple[str, int]] = set(source_options)
         forward = {
             (resource, timestamp)
@@ -792,6 +823,9 @@ class NativeRelaxationSolver:
                 if key not in backward:
                     backward.add(key)
                     queue.append(key)
+        forward_by_resource: dict[str, set[int]] = {}
+        for resource, timestamp in forward:
+            forward_by_resource.setdefault(resource, set()).add(timestamp)
         relevant: set[int] = set()
         for global_column, (left, right) in enumerate(native_edges):
             left_phase = resource_phase[left]
@@ -799,9 +833,7 @@ class NativeRelaxationSolver:
             if left_phase < 0 or right_phase < 0:
                 continue
             delta = (right_phase - left_phase) % problem.ii
-            for resource, timestamp in forward:
-                if resource != left:
-                    continue
+            for timestamp in forward_by_resource.get(left, ()):
                 if (right, timestamp + delta) in backward:
                     relevant.add(global_column)
                     break
