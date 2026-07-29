@@ -167,3 +167,39 @@ def test_unwired_method_fails_preflight_instead_of_returning_proxy(
     assert completed.returncode == 3
     assert payload["status"] == "UNSUPPORTED"
     assert "refusing to synthesize proxy results" in payload["error_message"]
+
+
+@pytest.mark.parametrize("method", ["dual", "proposal", "top4", "full"])
+def test_paper_method_aliases_are_strict_unwired_hooks(
+    tmp_path, monkeypatch, method
+):
+    monkeypatch.setattr(
+        "scripts.run_v5b_pilot_queue._git_commit", lambda: "a" * 40
+    )
+    row = freeze_job(_job(tmp_path, method=method), tmp_path / "output")
+    spec = tmp_path / f"{method}.json"
+    result = tmp_path / f"{method}.result.json"
+    row.update(
+        {
+            "heartbeat_path": str(tmp_path / f"{method}.heartbeat.json"),
+            "result_path": str(result),
+            "artifact_directory": str(tmp_path / f"{method}.artifacts"),
+        }
+    )
+    spec.write_text(json.dumps(row), encoding="utf-8")
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.run_v5b_pilot_worker",
+            "--spec",
+            str(spec),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        check=False,
+    )
+    assert completed.returncode == 3
+    assert json.loads(result.read_text())["status"] == "UNSUPPORTED"

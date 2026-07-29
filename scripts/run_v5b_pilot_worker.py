@@ -45,9 +45,19 @@ from scripts.v5b_pilot_queue_common import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_EXECUTORS = frozenset({"native_pathfinder", "length"})
+PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
+SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"})
 DECLARED_BUT_UNWIRED = frozenset(
-    {"dual_linear", "flow_proposal", "flow_top4", "full_relaxed_lookahead"}
+    {
+        "dual",
+        "dual_linear",
+        "proposal",
+        "flow_proposal",
+        "top4",
+        "flow_top4",
+        "full",
+        "full_relaxed_lookahead",
+    }
 )
 
 
@@ -86,7 +96,7 @@ def _preflight(spec: dict[str, Any]) -> tuple[Path | None, Path, Path]:
         raise ValueError("DFG hash changed after manifest freeze")
     if sha256_file(architecture) != spec["architecture_hash"]:
         raise ValueError("architecture hash changed after manifest freeze")
-    mapper = _resolve_mapper(spec) if method == "native_pathfinder" else None
+    mapper = _resolve_mapper(spec) if method in PATHFINDER_METHODS else None
     if mapper is not None and sha256_file(mapper) != spec["toolchain_hash"]:
         raise ValueError("native mapper binary hash changed after manifest freeze")
     if config_hash(spec) != spec["config_hash"]:
@@ -411,7 +421,7 @@ def main() -> int:
             raise FileExistsError(
                 f"refusing to overwrite artifact directory {artifact_directory}"
             )
-        if spec["method"] == "native_pathfinder":
+        if spec["method"] in PATHFINDER_METHODS:
             assert mapper is not None
             row = _native_pathfinder(
                 spec, mapper, dfg, architecture, artifact_directory, progress

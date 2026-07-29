@@ -130,7 +130,7 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
     row["source_tree_hash"] = row.get("source_tree_hash") or source_tree_hash(ROOT)
     row["native_method"] = row.get("native_method", 0)
     row["checkpoint_hash"] = row.get("checkpoint_hash", "")
-    if row["method"] == "native_pathfinder":
+    if row["method"] in {"native_pathfinder", "pathfinder"}:
         mapper = _mapper_path(row)
         if not mapper.is_file():
             raise FileNotFoundError(f"native mapper binary not found: {mapper}")
