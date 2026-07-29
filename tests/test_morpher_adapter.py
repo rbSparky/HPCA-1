@@ -156,3 +156,13 @@ def test_native_legality_rejects_hash_mismatch():
     result = validate_mapping(mapping, dfg, mrrg)
     assert not result["legal"]
     assert any(v["class"] == "DFG-hash mismatch" for v in result["violations"])
+
+
+def test_native_legality_rejects_recurrence_route_overrun():
+    mapping, dfg, mrrg = _native_contract_fixture()
+    dfg["nodes"][1]["recurrence_parent_keys"] = ["7|ADD|0"]
+    mapping["routes"][0]["ordered_resource_latencies"] = [0, 3]
+    mapping["routes"][0]["end_time"] = 3
+    result = validate_mapping(mapping, dfg, mrrg)
+    assert not result["legal"]
+    assert any(v["class"] == "recurrence violation" for v in result["violations"])

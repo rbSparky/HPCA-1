@@ -283,6 +283,35 @@ def validate_mapping(
                             "time_slot": phase,
                         }
                     )
+            destination_node = nodes.get(pair[1], {})
+            for recurrence_parent_key in destination_node.get(
+                "recurrence_parent_keys", []
+            ):
+                recurrence_parent = operations_by_node.get(str(recurrence_parent_key))
+                if recurrence_parent is None:
+                    violations.append(
+                        {
+                            "class": "recurrence violation",
+                            "edge": route.get("edge_id"),
+                            "reason": "unplaced_recurrence_parent",
+                            "recurrence_parent": recurrence_parent_key,
+                        }
+                    )
+                    continue
+                parent_latency = recurrence_parent.get("latency")
+                if (
+                    isinstance(parent_latency, int)
+                    and max(map(int, latencies)) > parent_latency + ii
+                ):
+                    violations.append(
+                        {
+                            "class": "recurrence violation",
+                            "edge": route.get("edge_id"),
+                            "recurrence_parent": recurrence_parent_key,
+                            "maximum_route_latency": max(map(int, latencies)),
+                            "maximum_legal_latency": parent_latency + ii,
+                        }
+                    )
         source_operation = operations_by_node.get(pair[0])
         destination_operation = operations_by_node.get(pair[1])
         if source_operation is None or destination_operation is None:

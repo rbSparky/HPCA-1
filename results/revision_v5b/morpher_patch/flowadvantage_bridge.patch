@@ -138,7 +138,7 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 -
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-25 06:35:43.198353068 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-29 02:41:02.488797457 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/arch/CGRA.cpp	2026-07-29 06:04:42.268949371 +0000
 @@ -6,6 +6,15 @@
   */
  
@@ -171,7 +171,7 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  				this->insertConnection(src_p, dest_p);
  			}
  		}
-@@ -1239,6 +1253,432 @@
+@@ -1239,6 +1253,444 @@
  	outFile.close();
  }
  
@@ -312,6 +312,8 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +		for (DFGNode &n : dfg->nodeList) {
 +			json x; x["dfg_node_id"] = n.idx; x["native_node_key"] = fa_node_key(&n); x["opcode"] = n.op; x["latency"] = n.rootDP ? n.rootDP->getLat() : 0;
 +			x["asap"] = n.ASAP; x["alap"] = n.ALAP; x["has_constant"] = n.hasConst; x["constant"] = n.constant; x["bb"] = n.BB;
++			for (DFGNode *rec_parent : n.recParents)
++				x["recurrence_parent_keys"].push_back(fa_node_key(rec_parent));
 +			for (DFGNode *p : n.parents) {
 +				json e;
 +				string native_edge_type = p->childrenOPType.count(&n) ? p->childrenOPType[&n] : "";
@@ -509,6 +511,16 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
 +				error="non-contiguous route";return false;
 +			}
 +		}
++		int maximum_route_latency = INT_MIN;
++		for (auto const &latency : r.value("ordered_resource_latencies", json::array()))
++			maximum_route_latency = max(maximum_route_latency, latency.get<int>());
++		for (DFGNode *rec_parent : dst->recParents) {
++			if (!rec_parent->rootDP) { error="unplaced recurrence parent"; return false; }
++			if (maximum_route_latency != INT_MIN &&
++				maximum_route_latency > rec_parent->rootDP->getLat() + get_t_max()) {
++				error="recurrence violation"; return false;
++			}
++		}
 +		Port *expected_start=src->rootDP->getOutputDP()->getOutPort("T");
 +		bool destination_ok = ports.back()->getMod()==dst->rootDP;
 +		// Native routes may terminate on the destination FU input port rather
@@ -623,22 +635,22 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  					assert(npb == 0 || npb == 1);
 diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp
 --- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-25 06:35:43.202019731 +0000
-+++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-29 02:57:14.580890170 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-29 06:04:03.944981894 +0000
 @@ -1905,7 +1905,17 @@
  	if(!check_parent_violation) { return false;}
  	for (DFGNode *recParent : node->recParents)
  	{
 -		assert(recParent->rootDP != NULL); //should be mapped
 +		// Backtracking can temporarily unmap an earlier recurrence parent while
-+		// a dependent memory operation is reconsidered.  Dereferencing it is
-+		// neither a legality check nor a recoverable mapper outcome.  Reject the
-+		// candidate until its recurrence anchor is placed; this is conservative
-+		// and preserves the original recurrence inequality below.
++		// a dependent memory operation is reconsidered. Dereferencing it is
++		// neither a legality check nor a recoverable mapper outcome. Defer this
++		// inequality until the anchor is placed; final native legality checks
++		// every mapped signal against every recurrence parent.
 +		if (recParent->rootDP == NULL)
 +		{
-+			LOG(ROUTE) << "rejecting candidate with unmapped recurrence parent: "
++			LOG(ROUTE) << "deferring candidate recurrence check for unmapped parent: "
 +					   << node->idx << " <- " << recParent->idx << "\n";
-+			return true;
++			continue;
 +		}
  		DataPath *recParentDP = recParent->rootDP;
  		//	assert(false);
