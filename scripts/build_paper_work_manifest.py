@@ -60,11 +60,29 @@ def _canonical_dirs(root: Path, kernel: str, arch: str) -> list[Path]:
                 continue
             if mapping.get("dfg_hash") != dfg.get("dfg_hash") or mapping.get("architecture_hash") != mrrg.get("architecture_hash"):
                 continue
-            resource_ids = {
-                str(resource.get("native_resource_id", resource.get("resource_id", resource.get("id", ""))))
-                for resource in mrrg.get("resources", [])
-            }
-            if not resource_ids or any(
+            node_ids = [
+                str(node.get("dfg_node_id", node.get("node_id", node.get("id", ""))))
+                for node in dfg.get("nodes", [])
+            ]
+            if not node_ids or any(not value for value in node_ids) or len(node_ids) != len(set(node_ids)):
+                continue
+            node_id_set = set(node_ids)
+            if any(
+                str(edge.get("source_node", edge.get("src", ""))) not in node_id_set
+                or str(edge.get("destination_node", edge.get("dst", ""))) not in node_id_set
+                for edge in dfg.get("dependencies", dfg.get("edges", []))
+            ):
+                continue
+            resource_records: dict[str, dict[str, Any]] = {}
+            resource_conflict = False
+            for resource in mrrg.get("resources", []):
+                rid = str(resource.get("native_resource_id", resource.get("resource_id", resource.get("id", ""))))
+                previous = resource_records.get(rid)
+                if previous is not None and previous != resource:
+                    resource_conflict = True
+                resource_records[rid] = resource
+            resource_ids = set(resource_records)
+            if not resource_ids or resource_conflict or any(
                 str(edge.get("src")) not in resource_ids
                 or str(edge.get("dst")) not in resource_ids
                 for edge in mrrg.get("edges", [])
