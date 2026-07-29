@@ -42,3 +42,32 @@ the remote process.
 The guide's original `gpu-cu128` environment currently has a CUDA 13 wheel
 that the installed 575.51.03 driver cannot initialize. `gpu-test` instead
 provides PyTorch 2.11.0+cu128 and has passed `scripts/doctor.py` on GPU0.
+
+## Pinned Morpher v5b runtime
+
+The cluster does not provide Docker or root access. The validated fixed14
+native mapper is installed as an immutable, content-addressed prefix:
+
+```text
+/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/
+morpher-fixed14-gcc7-af402f1b7f20
+```
+
+Use `RESOURCE_POOL=cpu` because native Morpher search is CPU-bound. For
+example, one atomic native dump is submitted with:
+
+```bash
+RESOURCE_POOL=cpu bash tools/cluster_queue.sh submit NAME -- \
+  bash tools/run_cluster_morpher_export_v5b.sh \
+  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed14-gcc7-af402f1b7f20 \
+  applications/sample_xmls/fix_fft_INNERMOST_LN121_DFG.xml \
+  json_arch/hycube_original.json \
+  4 4 0 HyCUBE_4REG 0 \
+  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_outputs/UNIQUE_OUTPUT_NAME
+```
+
+The runner refuses to overwrite output, preserves native stdout/stderr,
+updates a 15-second heartbeat, validates the three JSON contract files, and
+atomically exposes a successful output. Exact setup provenance and smoke
+evidence are recorded in
+`results/revision_v5b/cluster/CLUSTER_MORPHER_SETUP.md`.
