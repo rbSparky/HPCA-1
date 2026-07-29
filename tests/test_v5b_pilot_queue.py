@@ -110,6 +110,39 @@ def test_recovery_never_changes_terminal_rows():
     assert rows[1]["status"] == "RETRYABLE"
 
 
+def test_recovery_reads_atomic_heartbeat_before_declaring_stale(
+    tmp_path, monkeypatch
+):
+    import time
+
+    heartbeat = tmp_path / "heartbeat.json"
+    atomic_json(
+        heartbeat,
+        {
+            "schema": "flowadvantage_v5b_heartbeat_v1",
+            "work_id": "running",
+            "timestamp": time.time(),
+        },
+    )
+    rows = [
+        {
+            "work_id": "running",
+            "status": "RUNNING",
+            "attempt": "1",
+            "worker_pid": "123",
+            "worker_pid_create_time": "1",
+            "last_heartbeat": "0",
+            "heartbeat_path": str(heartbeat),
+        }
+    ]
+    monkeypatch.setattr(
+        "scripts.run_v5b_pilot_queue._pid_matches", lambda row: True
+    )
+    assert recover(rows, stale_seconds=35) == 0
+    assert rows[0]["status"] == "RUNNING"
+    assert float(rows[0]["last_heartbeat"]) > 0
+
+
 def test_atomic_manifest_roundtrip(tmp_path):
     path = tmp_path / "manifest.csv"
     row = {field: "" for field in __import__(

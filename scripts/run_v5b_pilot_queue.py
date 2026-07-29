@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -217,6 +218,16 @@ def recover(rows: list[dict[str, Any]], stale_seconds: float) -> int:
     for row in rows:
         if row["status"] != "RUNNING":
             continue
+        heartbeat_path = Path(row.get("heartbeat_path") or "")
+        if heartbeat_path.is_file():
+            try:
+                heartbeat = json.loads(
+                    heartbeat_path.read_text(encoding="utf-8")
+                )
+                if heartbeat.get("work_id") == row["work_id"]:
+                    row["last_heartbeat"] = heartbeat["timestamp"]
+            except (OSError, ValueError, KeyError):
+                pass
         heartbeat_age = now - float(row.get("last_heartbeat") or 0)
         if not _pid_matches(row) or heartbeat_age > stale_seconds:
             row["status"] = (
@@ -263,12 +274,20 @@ def _kill_process_tree(process: subprocess.Popen[Any], stderr_path: Path) -> Non
             pass
 
 
-def _run_one(row: dict[str, Any], output: Path) -> dict[str, Any]:
+def _run_one(
+    row: dict[str, Any],
+    output: Path,
+    state_callback: Any,
+) -> dict[str, Any]:
     row = dict(row)
     row["attempt"] = int(row.get("attempt") or 0) + 1
     row["status"] = "RUNNING"
     row["start_time"] = row["last_heartbeat"] = time.time()
     row["worker_host"] = host_name()
+    # Publish the claim before creating a child.  A queue crash can therefore
+    # never leave an active child behind a manifest row that still says
+    # PENDING.
+    state_callback(dict(row))
     result_path = Path(row["result_path"])
     heartbeat_path = Path(row["heartbeat_path"])
     stdout_path = Path(row["stdout_path"])
@@ -312,6 +331,7 @@ def _run_one(row: dict[str, Any], output: Path) -> dict[str, Any]:
         )
         row["worker_pid"] = process.pid
         row["worker_pid_create_time"] = psutil.Process(process.pid).create_time()
+        state_callback(dict(row))
         deadline = started_monotonic + float(row["timeout_seconds"])
         while process.poll() is None:
             try:
@@ -423,14 +443,20 @@ def main() -> int:
     if arguments.limit is not None:
         selected = selected[: arguments.limit]
 
+    manifest_lock = threading.Lock()
+
+    def record_state(updated: dict[str, Any]) -> None:
+        with manifest_lock:
+            index = next(
+                index
+                for index, row in enumerate(rows)
+                if row["work_id"] == updated["work_id"]
+            )
+            rows[index] = updated
+            atomic_csv(manifest_path, rows)
+
     def publish(updated: dict[str, Any]) -> None:
-        index = next(
-            index
-            for index, row in enumerate(rows)
-            if row["work_id"] == updated["work_id"]
-        )
-        rows[index] = updated
-        atomic_csv(manifest_path, rows)
+        record_state(updated)
         print(
             json.dumps(
                 {
@@ -445,7 +471,7 @@ def main() -> int:
 
     with ThreadPoolExecutor(max_workers=arguments.concurrency) as pool:
         futures = {
-            pool.submit(_run_one, row, output): row["work_id"]
+            pool.submit(_run_one, row, output, record_state): row["work_id"]
             for row in selected
         }
         for future in as_completed(futures):
