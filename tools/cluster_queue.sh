@@ -25,7 +25,9 @@ sync_source() {
   rsync -az \
     --exclude '.git/' --exclude '__pycache__/' --exclude '.venv/' --exclude '.mamba/' \
     --exclude '/results/' --exclude '/outputs/' --exclude '/logs/' --exclude '/data/' \
-    --exclude '/.cluster_runs/' --exclude '/.remote_jobs/' \
+    --exclude '/.cluster_runs/' --exclude '/.cluster_outputs/' \
+    --exclude '/.cluster_toolchains/' --exclude '/.cluster_inputs/' \
+    --exclude '/.cluster_queue/' --exclude '/.remote_jobs/' \
     -e ssh ./ "${HOST}:${REMOTE_DIR}/"
 }
 

@@ -13,8 +13,15 @@ MAMBA_ENV="${MAMBA_ENV:-base}"
 LOCAL_HOME="${LOCAL_HOME:-$HOME}"
 
 sync_up() {
-  rsync -az --delete \
+  # Additive by construction.  This legacy helper shares a remote project
+  # root with append-only queue state, immutable toolchains, inputs, and
+  # outputs; a mirroring delete can destroy active experiment provenance.
+  # Cleanup is never an implicit side effect of source synchronization.
+  rsync -az \
     --exclude '.git/' --exclude '__pycache__/' --exclude '.venv/' --exclude '.mamba/' \
+    --exclude '/.cluster_runs/' --exclude '/.cluster_outputs/' \
+    --exclude '/.cluster_toolchains/' --exclude '/.cluster_inputs/' \
+    --exclude '/.cluster_queue/' \
     --exclude '/outputs/' --exclude '/logs/' --exclude '/data/' --exclude '/results/' --exclude '/results_repro/' --exclude '/results_verified/' --exclude '/ogb_data/' --exclude "${JOB_DIR}/" \
     --exclude 'celebA dataset.zip' --exclude 'celebA dataset.zip:Zone.Identifier' \
     -e ssh \
