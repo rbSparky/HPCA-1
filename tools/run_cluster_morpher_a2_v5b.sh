@@ -13,7 +13,7 @@ case "$kernel" in
   fix_fft)
     source_arch="$source_root/json_arch/fft_various_mem_archs/stdnoc_mem_dual_port_two_banked.json"
     # The PartPred DFG carries every BasePointerName required by the checked-in
-    # memory layout.  The fixed15 native mapper disambiguates its self-
+    # memory layout.  The fixed16+ native mapper disambiguates its self-
     # recurrence routing sentinel from a same-index fanout destination.
     dfg_rel="applications/fix_fft_npb/fix_fft_INNERMOST_LN111_PartPred_DFG.xml"
     required=(fr manupa1 l.1253 conv31252 fi shl29 conv.i conv.i241)

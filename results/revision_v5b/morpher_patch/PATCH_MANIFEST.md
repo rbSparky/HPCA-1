@@ -6,9 +6,27 @@ Validated bridge image: `quotientflow-morpher-v5b-native-fixed11@sha256:629964cd
 
 Current legality-validation build: `quotientflow-morpher-v5b-native-fixed15@sha256:ad69877bd76b754f3041422916f1a15bd9cb07b1a520fb7cbe4103a08f64cea4`.
 
+Self-recurrence/fanout validation build:
+`quotientflow-morpher-v5b-native-fixed16@sha256:6b4397f60624fd426226362858ae543bdd92a521c52f80fb37b207e5d73d4d02`.
+
+Memory round-trip validation build:
+`quotientflow-morpher-v5b-native-fixed17@sha256:4581c2c9a868ffd129609c5b962417e1d8ff3e84cbe2890a6d1364101e901957`.
+
 Exact source diff: `flowadvantage_bridge.patch`
 
 Patch SHA-256: `22e4311a1c7b3b021bc5047aa962b9fa6ce248b5c91f33e4168cf5bf1556db4b`.
+
+Self-recurrence/fanout fix: `self_recurrence_fanout_fix.patch`
+
+Fix SHA-256: `1b887fb218818979535088a4c2c57c109ec1fb0514f456ac22b5f1b647a1ecd8`.
+
+Memory import identity fix: `memory_import_identity_fix.patch`
+
+Fix SHA-256: `69d6eb2f58e509852d19018b946955805053ed81883360c81a4c24b0e8c8276e`.
+
+Simulator defined-return fix: `hycube_simulator_defined_returns.patch`
+
+Fix SHA-256: `afdd1c71fe7d1062a4564107c2c342192dc4b391cefd4b205dd1bd73ffa8a131`.
 
 The patch adds dump/load flags, actual expanded MRRG export, stable keyed
 DFG identities (including duplicate legacy numeric IDs), native operand-edge
@@ -17,8 +35,26 @@ port resources, explicit operand-mux/conflict metadata, fresh-MRRG external
 import, semantic hash guards, directed route validation, native mutex-aware
 capacity validation, and imported binary generation.
 
-It does not change PathFinder, SA, LISA, architecture semantics, or the native
-mapping objective. The validated `gemm_nt` round trip preserves all 52
+The bridge patch does not change SA, LISA, architecture semantics, or the
+native mapping objective. The separate fixed16 compatibility correction
+changes only PathFinder/Heuristic route bookkeeping for a previously
+unrepresentable combination: a DFG self recurrence plus another fanout from
+the same source. Morpher overloads `(port, src_id)` as both its T-output
+sentinel and a real self-edge destination. The correction distinguishes these
+cases by the native port name: T retains sentinel behavior, while a non-T port
+receives the additional fanout destination. Fixed16 passed the unchanged
+20-operation/23-route array smoke with zero independent-legality violations.
+
+Memory-aware native mapping mutates GEP and outer-loop constants using the
+selected architecture's variable base addresses before export. Fixed17 applies
+that same native `UpdateVariableBaseAddr()` transformation before external
+stable-key resolution. This is an ordering correction, not a new identity
+heuristic. On the exact A2 GEMM artifact it preserves 52/52 placements, 72/72
+ordered routes, and II=8 across export/reimport; both serialized states pass
+the independent legality checker with zero violations and the imported state
+passes Morpher's native legality checker.
+
+The validated `gemm_nt` round trip preserves all 52
 placements, all 72 physical routes, and II=8 exactly; its single PS pseudo
 dependency remains in the DFG contract and is correctly excluded from the
 physical route universe.

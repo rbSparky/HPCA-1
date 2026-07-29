@@ -1,0 +1,27 @@
+--- a/src/CGRA_xml_compiler.cpp
++++ b/src/CGRA_xml_compiler.cpp
+@@ -144,6 +144,15 @@ int main(int argn, char *argc[])
+ 		CGRA *externalCGRA;
+ 		if (json_file_name.empty()) externalCGRA = new CGRA(NULL, "coreCGRA", initUserII, ydim, xdim, &externalDFG, PEType, numberOfDPs, mapper->getcongestedPortsPtr());
+ 		else externalCGRA = new CGRA(json_file_name, initUserII, xdim, ydim, mapper->getcongestedPortsPtr());
++		// Native memory-aware mapping resolves GEP and outer-loop constants
++		// from the selected architecture before placement (Map calls
++		// UpdateVariableBaseAddr).  Exported stable node keys therefore carry
++		// those resolved constants.  Apply the identical transformation before
++		// resolving external node identities; otherwise a valid mapping cannot
++		// round-trip through a memory-modelled architecture.
++		mapper->cgra = externalCGRA;
++		mapper->dfg = &externalDFG;
++		if (externalCGRA->is_spm_modelled) mapper->UpdateVariableBaseAddr();
+ 		std::string import_error;
+ 		bool imported = externalCGRA->ImportFlowAdvantageMapping(args.load_flowadvantage_mapping, &externalDFG, import_error);
+ 		std::cout << "FlowAdvantage import " << (imported ? "PASS" : "FAIL") << " : " << import_error << "\n";
+@@ -151,8 +160,6 @@ int main(int argn, char *argc[])
+ 		bool legal = externalCGRA->ValidateFlowAdvantageMapping(&externalDFG, import_error);
+ 		std::cout << "FlowAdvantage native legality " << (legal ? "PASS" : "FAIL") << " : " << import_error << "\n";
+ 		if (!legal) return 4;
+-		mapper->cgra = externalCGRA;
+-		mapper->dfg = &externalDFG;
+ 		if (PEType == "HyCUBE_4REG") {
+ 			std::cout << "Printing HyCUBE Binary from imported mapping...\n";
+ 			mapper->printHyCUBEBinary(externalCGRA);

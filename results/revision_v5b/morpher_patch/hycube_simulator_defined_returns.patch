@@ -1,0 +1,51 @@
+--- a/src/CGRA.cpp
++++ b/src/CGRA.cpp
+@@ -11,6 +11,7 @@
+ #include <iostream>
+ #include <cstdlib>
+ #include <assert.h>
++#include <stdexcept>
+ 
+ namespace HyCUBESim {
+ 
+@@ -147,6 +147,7 @@ int CGRA::parseCMEM(std::string CMEMFileName,int xdim, int ydim) {
+ 			}
+ 		    std::getline(cmemfile,line);
+ 		}
++	return 0;
+ }
+ 
+ int CGRA::parseDMEM(std::string DMEMFileName) {
+@@ -179,6 +180,7 @@ int CGRA::parseDMEM(std::string DMEMFileName) {
+ 
+ 			dmem[(DataType)atoi(addr.c_str())]=atoi(pre.c_str());
+ 		}
++	return 0;
+ }
+ 
+ int CGRA::parseDMEM(std::string DMEMFileName,std::string memallocFileName,int memsize) {
+@@ -242,6 +244,7 @@ int CGRA::parseDMEM(std::string DMEMFileName,std::string memallocFileName,int me
+ 	//	for (int i = 0; i < 4096; ++i) {
+ 	//		LOG(SIMULATOR) << i << "," << (int)dmem[i] << "\n";
+ 	//	}
++	return 0;
+ }
+ 
+ int CGRA::executeCycle(int kII) {
+@@ -257,6 +260,7 @@ int CGRA::executeCycle(int kII) {
+ 			CGRATiles[y][x]->updatePC();
+ 		}
+ 	}
++	return 0;
+ }
+ void CGRA::dumpRawData(){
+ 	std::ofstream myfile;
+@@ -313,8 +317,8 @@ XBarInput CGRA::convertStrtoXBI(std::string str) {
+ 				return INV;
+ 			default:
+ 				LOG(SIMULATOR) << str;
+-				assert(false);
++				throw std::runtime_error("invalid crossbar selector: " + str);
+ 		}
+ }
+ 

@@ -1,0 +1,45 @@
+--- a/src/mapper/PathFinderMapper.cpp
++++ b/src/mapper/PathFinderMapper.cpp
+@@ -1703,8 +1703,18 @@ void CGRAXMLCompile::PathFinderMapper::assignPath(DFGNode *src, DFGNode *dest,
+ 			}
+ 			else
+ 			{
+-				LOG(ROUTE) << p.second->getFullName() ;
+-				assert(p.second->getName().compare("T") == 0);
++				// The second field of routingPorts is normally a destination
++				// node id, but DataPath::assignNode also uses src->idx for the
++				// operation's T output.  Those meanings collide for a
++				// recurrence edge whose destination is the source itself.
++				// In that case a non-T routing resource may legitimately
++				// already have (port, src->idx) and must still be associated
++				// with this distinct fanout destination.
++				if (p.second->getName().compare("T") != 0)
++				{
++					src->routingPorts.push_back(std::make_pair(p.second, dest->idx));
++					LOG(ROUTE) << "self-recurrence/fanout port: "
++							   << p.second->getFullName();
++				}
+ 			}
+ 		}
+ 		//		src->routingPortDestMap[p]=dest->idx;
+--- a/src/mapper/HeuristicMapper.cpp
++++ b/src/mapper/HeuristicMapper.cpp
+@@ -976,8 +976,16 @@ void CGRAXMLCompile::HeuristicMapper::assignPath(DFGNode *src, DFGNode *dest,
+ 			}
+ 			else
+ 			{
+-				std::cout << p.second->getFullName() << "\n";
+-				assert(p.second->getName().compare("T") == 0);
++				// routingPorts uses src->idx both as DataPath's T-output
++				// marker and as a real destination id for self recurrences.
++				// A non-T port with that pair is the latter; preserve the
++				// additional fanout destination instead of aborting.
++				if (p.second->getName().compare("T") != 0)
++				{
++					src->routingPorts.push_back(std::make_pair(p.second, dest->idx));
++					std::cout << "self-recurrence/fanout port: "
++							  << p.second->getFullName() << "\n";
++				}
+ 			}
+ 		}
+ 		//		src->routingPortDestMap[p]=dest->idx;

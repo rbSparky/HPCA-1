@@ -31,6 +31,14 @@ fi
 tmp_dir="${output_dir}.tmp.$$"
 mkdir -p "$tmp_dir/export"
 trap 'printf "INCOMPLETE_EXPORT_DIR=%s\n" "$tmp_dir" >&2' ERR
+# printHyCUBEBinary derives its output filename from the DFG argument.  Passing
+# a toolchain-owned DFG path therefore mutates the immutable toolchain and
+# leaves the bitstream outside the atomic result.  Run from an exact local
+# copy and verify its content hash before invoking Morpher.
+dfg_input="$tmp_dir/$(basename "$dfg")"
+cp -p "$dfg" "$dfg_input"
+[[ "$(sha256sum "$dfg_input" | awk '{print $1}')" == \
+   "$(sha256sum "$dfg" | awk '{print $1}')" ]]
 if [[ -n "${FLOWADVANTAGE_AUX_INPUT_DIR:-}" ]]; then
   test -d "$FLOWADVANTAGE_AUX_INPUT_DIR"
   mkdir "$tmp_dir/derived_inputs"
@@ -41,7 +49,7 @@ start="$(date +%s.%N)"
 (
   cd "$tmp_dir"
   /usr/bin/time -v "$mapper" \
-    -d "$dfg" -x "$x_dim" -y "$y_dim" -j "$arch" \
+    -d "$dfg_input" -x "$x_dim" -y "$y_dim" -j "$arch" \
     -i "$initial_ii" -t "$pe_type" -m "$method" \
     --dump-flowadvantage-state "$tmp_dir/export"
 ) > "$tmp_dir/mapper.stdout.log" 2> "$tmp_dir/mapper.stderr.log" &
@@ -72,13 +80,22 @@ if (( mapper_rc != 0 )); then
   exit "$mapper_rc"
 fi
 
-python3 - "$tmp_dir/export" "$start" "$end" > "$tmp_dir/summary.json" <<'PY'
+if [[ "$pe_type" == "HyCUBE_4REG" ]]; then
+  mapfile -t bitstreams < <(find "$tmp_dir" -maxdepth 1 -type f -name '*_binary.bin')
+  if (( ${#bitstreams[@]} != 1 )); then
+    echo "expected exactly one HyCUBE bitstream, found ${#bitstreams[@]}" >&2
+    exit 42
+  fi
+fi
+
+python3 - "$tmp_dir/export" "$tmp_dir" "$start" "$end" > "$tmp_dir/summary.json" <<'PY'
 import hashlib
 import json
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
+run_root = pathlib.Path(sys.argv[2])
 docs = {}
 parsed = {}
 for name in ("dfg.json", "mrrg.json", "mapping.json"):
@@ -88,13 +105,22 @@ for name in ("dfg.json", "mrrg.json", "mapping.json"):
     payload = path.read_bytes()
     parsed[name] = json.loads(payload)
     docs[name] = {"bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+bitstreams = sorted(run_root.glob("*_binary.bin"))
 m = parsed["mapping.json"]
 print(json.dumps({
     "schema": "cluster_morpher_export_v5b",
-    "wall_seconds": float(sys.argv[3]) - float(sys.argv[2]),
+    "wall_seconds": float(sys.argv[4]) - float(sys.argv[3]),
     "ii": m.get("ii"),
     "operation_count": len(m.get("operations", [])),
     "route_count": len(m.get("routes", [])),
+    "bitstreams": [
+        {
+            "name": path.name,
+            "bytes": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in bitstreams
+    ],
     "documents": docs,
 }, indent=2, sort_keys=True))
 PY
