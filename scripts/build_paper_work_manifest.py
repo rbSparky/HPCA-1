@@ -22,6 +22,7 @@ from scripts.v5b_pilot_queue_common import (
     source_tree_hash,
     work_id,
 )
+from flowadvantage.morpher_adapter.native_mapper import NativeContractError, NativeMorpherProblem
 METHODS = ("length", "dual_linear", "flow_proposal", "flow_top4", "full_relaxed_lookahead")
 KERNELS = ("array_add", "array_cond", "hpcg", "trmm", "gemm_nt", "fix_fft")
 ARCHES = ("A0_hycube4x4", "A1_stdnoc4x4", "A2_hycube4x4_mem_variant", "A3_hycube8x8")
@@ -33,7 +34,12 @@ def _wid(row: dict[str, Any]) -> str:
     raw = "paper_suite_v2|" + "|".join(str(row[k]) for k in ("kernel", "architecture", "method", "seed", "budget_seconds"))
     return hashlib.sha256(raw.encode()).hexdigest()[:20]
 
-def _canonical_dirs(root: Path, kernel: str, arch: str) -> list[Path]:
+def _canonical_dirs(
+    root: Path,
+    kernel: str,
+    arch: str,
+    rejected: list[str] | None = None,
+) -> list[Path]:
     """Return only complete native JSON contract directories.
 
     Native queue exports place the contract under ``export/``; older frozen
@@ -88,6 +94,18 @@ def _canonical_dirs(root: Path, kernel: str, arch: str) -> list[Path]:
                 for edge in mrrg.get("edges", [])
             ):
                 continue
+            try:
+                # Run the same constructor-level semantic checks used by every
+                # worker before a row enters an experiment manifest.  This
+                # catches contracts that are JSON-complete but unusable (for
+                # example legacy MRRGs without native FU latency metadata).
+                NativeMorpherProblem.from_native_documents(dfg, mrrg)
+            except (NativeContractError, KeyError, TypeError, ValueError) as error:
+                if rejected is not None:
+                    rejected.append(
+                        f"invalid native contract: {kernel}/{arch} {directory}: {error}"
+                    )
+                continue
             priority = 0 if directory.name == "export" else (1 if directory.name == path.name else 2)
             candidates.append((priority, str(directory), directory))
     return [item[2] for item in sorted(candidates)]
@@ -96,7 +114,7 @@ def _select(root: Path) -> tuple[dict[tuple[str,str], Path], list[str]]:
     selected, blockers = {}, []
     for kernel in KERNELS:
         for arch in ARCHES:
-            found = _canonical_dirs(root, kernel, arch)
+            found = _canonical_dirs(root, kernel, arch, blockers)
             if found:
                 selected[(kernel, arch)] = found[0]
             else:
