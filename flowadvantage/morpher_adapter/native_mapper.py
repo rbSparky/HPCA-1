@@ -20,6 +20,7 @@ placements; the API never silently invents a scheduling horizon.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from heapq import heappop, heappush
@@ -228,6 +229,26 @@ class NativeMorpherProblem:
             rid: tuple(sorted(mutable_adjacency.get(rid, ())))
             for rid in self.resources
         }
+        # A static reverse lower bound on absolute temporal delay is used to
+        # prune route-search states that cannot reach their deadline.  It is
+        # deliberately independent of occupancy and signal compatibility, so
+        # it can only remove states that are impossible even in the relaxed
+        # empty MRRG.  Edge delays are exactly the same modulo-II arithmetic
+        # used by ``_shortest_temporal_path`` (zero-delay intra-phase edges
+        # are retained), hence this is a semantics-preserving admissible
+        # bound rather than a heuristic path choice.
+        self.reverse_adjacency: dict[str, tuple[str, ...]] = {
+            rid: () for rid in self.resources
+        }
+        mutable_reverse: dict[str, set[str]] = defaultdict(set)
+        for src, destinations in self.adjacency.items():
+            for dst in destinations:
+                mutable_reverse[dst].add(src)
+        self.reverse_adjacency = {
+            rid: tuple(sorted(mutable_reverse.get(rid, ())))
+            for rid in self.resources
+        }
+        self._min_delay_to_destination_cache: dict[str, dict[str, int]] = {}
         self.conflicts: dict[str, frozenset[str]] = {}
         for rid, resource in self.resources.items():
             conflicting = {
@@ -701,12 +722,22 @@ class NativeMorpherProblem:
         ] = {start: None}
         expansions = 0
         goal: tuple[str, int] | None = None
+        # The deadline is absolute, while every native resource has a stable
+        # modulo phase.  The reverse Dijkstra bound is keyed only by the
+        # current resource and therefore remains valid under every occupancy
+        # state and every blocked-edge Yen spur search.
+        min_delay_to_goal = self._min_delay_to_destination(destination_port)
         while queue and expansions < max_expansions:
             current, current_latency, path_mask = queue.popleft()
             if current == destination_port and current_latency == deadline:
                 goal = (current, current_latency)
                 break
             expansions += 1
+            if (
+                current in min_delay_to_goal
+                and current_latency + min_delay_to_goal[current] > deadline
+            ):
+                continue
             for nxt in self.adjacency.get(current, ()):
                 if nxt in blocked_nodes or (current, nxt) in blocked_edges:
                     continue
@@ -715,6 +746,11 @@ class NativeMorpherProblem:
                 if isinstance(phase, int) and phase >= 0:
                     next_latency += (phase - current_latency) % self.ii
                 if next_latency > deadline:
+                    continue
+                if (
+                    nxt in min_delay_to_goal
+                    and next_latency + min_delay_to_goal[nxt] > deadline
+                ):
                     continue
                 next_state = (nxt, next_latency)
                 if next_state in previous:
@@ -751,6 +787,45 @@ class NativeMorpherProblem:
             # wait implementation.
             return None
         return resources, tuple(latency for _, latency in states)
+
+    def _min_delay_to_destination(self, destination_port: str) -> dict[str, int]:
+        """Return exact empty-MRRG minimum temporal delay to one resource.
+
+        Each directed MRRG edge advances absolute latency by the same
+        ``(phase(dst)-phase(src)) mod II`` rule used by route reconstruction.
+        The graph therefore has non-negative 0/1/... weights and a reverse
+        Dijkstra computes a lower bound for every source resource.  Occupancy,
+        signal conflicts, blocked Yen edges, and simple-path constraints can
+        only increase the required delay, so pruning against this table cannot
+        change a legal route result.
+        """
+
+        cached = self._min_delay_to_destination_cache.get(destination_port)
+        if cached is not None:
+            return cached
+        if destination_port not in self.resources:
+            return {}
+        distances: dict[str, int] = {destination_port: 0}
+        heap: list[tuple[int, str]] = [(0, destination_port)]
+        while heap:
+            distance, current = heappop(heap)
+            if distance != distances.get(current):
+                continue
+            current_phase = self.resources[current].get("time_slot")
+            for predecessor in self.reverse_adjacency.get(current, ()):
+                predecessor_phase = self.resources[predecessor].get("time_slot")
+                if not isinstance(current_phase, int) or not isinstance(
+                    predecessor_phase, int
+                ):
+                    edge_delay = 0
+                else:
+                    edge_delay = (current_phase - predecessor_phase) % self.ii
+                candidate = distance + edge_delay
+                if candidate < distances.get(predecessor, math.inf):
+                    distances[predecessor] = candidate
+                    heappush(heap, (candidate, predecessor))
+        self._min_delay_to_destination_cache[destination_port] = distances
+        return distances
 
     def action_for_placement(
         self,
