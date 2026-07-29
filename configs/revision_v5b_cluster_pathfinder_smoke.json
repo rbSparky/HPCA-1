@@ -1,0 +1,21 @@
+{
+  "schema": "flowadvantage_v5b_pilot_jobs_v1",
+  "description": "One authoritative fixed17 native PathFinder queue smoke; this is infrastructure validation, not a pilot result.",
+  "jobs": [
+    {
+      "kernel": "array_add",
+      "architecture": "A0_hycube4x4",
+      "method": "native_pathfinder",
+      "seed": 11,
+      "timeout_seconds": 120,
+      "toolchain_path": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "dfg_path": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb/source/Morpher_CGRA_Mapper/applications/array_add/array_add_INNERMOST_LN1_PartPred_DFG.xml",
+      "architecture_path": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb/source/Morpher_CGRA_Mapper/applications/hycube/array_add/hycube_original_mem.json",
+      "x": 4,
+      "y": 4,
+      "initial_ii": 0,
+      "pe_type": "HyCUBE_4REG",
+      "native_method": 0
+    }
+  ]
+}
