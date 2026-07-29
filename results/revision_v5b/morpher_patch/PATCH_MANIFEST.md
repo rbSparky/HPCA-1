@@ -14,7 +14,7 @@ Memory round-trip validation build:
 
 Exact source diff: `flowadvantage_bridge.patch`
 
-Patch SHA-256: `22e4311a1c7b3b021bc5047aa962b9fa6ce248b5c91f33e4168cf5bf1556db4b`.
+Patch SHA-256: `dc4b4d82a6c127279a682861e2306f6e9ca68b7e3df77f37a50c0655cc1c041b`.
 
 Self-recurrence/fanout fix: `self_recurrence_fanout_fix.patch`
 
@@ -33,7 +33,8 @@ DFG identities (including duplicate legacy numeric IDs), native operand-edge
 semantics, canonical native-ID mapping export, complete source and destination
 port resources, explicit operand-mux/conflict metadata, fresh-MRRG external
 import, semantic hash guards, directed route validation, native mutex-aware
-capacity validation, and imported binary generation.
+capacity validation, exact per-FU operation-latency tables, and imported
+binary generation.
 
 The bridge patch does not change SA, LISA, architecture semantics, or the
 native mapping objective. The separate fixed16 compatibility correction

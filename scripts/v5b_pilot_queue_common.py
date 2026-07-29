@@ -86,6 +86,13 @@ MANIFEST_FIELDS = (
     "architecture_hash",
     "reference_mapping_hash",
     "checkpoint_hash",
+    "checkpoint_path",
+    "anchor_operations",
+    "relaxation_cache_dir",
+    "relaxation_tau",
+    "relaxation_timeout",
+    "reachable_edge_pruning",
+    "device",
 )
 
 SEMANTIC_FIELDS = (
@@ -115,6 +122,13 @@ SEMANTIC_FIELDS = (
     "architecture_hash",
     "reference_mapping_hash",
     "checkpoint_hash",
+    "checkpoint_path",
+    "anchor_operations",
+    "relaxation_cache_dir",
+    "relaxation_tau",
+    "relaxation_timeout",
+    "reachable_edge_pruning",
+    "device",
 )
 
 

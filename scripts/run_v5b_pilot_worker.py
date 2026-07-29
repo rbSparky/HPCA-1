@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import faulthandler
 import json
+import math
 import os
 import re
 import signal
@@ -52,7 +53,11 @@ PATHFINDER_METHODS = frozenset({"native_pathfinder", "pathfinder"})
 FLOW_METHODS = frozenset({
     "flow_proposal", "flow_top4", "full_relaxed_lookahead",
 })
-UNSUPPORTED_METHODS = frozenset({"dual", "dual_linear"})
+UNSUPPORTED_METHODS = frozenset({
+    # Long-form canonical methods are wired below.  These legacy aliases are
+    # retained only to fail closed rather than silently changing semantics.
+    "dual", "dual_linear", "proposal", "top4", "full",
+})
 SUPPORTED_EXECUTORS = PATHFINDER_METHODS | frozenset({"length"}) | FLOW_METHODS
 
 

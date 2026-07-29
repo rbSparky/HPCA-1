@@ -131,6 +131,21 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
     row["source_tree_hash"] = row.get("source_tree_hash") or source_tree_hash(ROOT)
     row["native_method"] = row.get("native_method", 0)
     row["checkpoint_hash"] = row.get("checkpoint_hash", "")
+    if row.get("checkpoint_path"):
+        checkpoint = Path(row["checkpoint_path"]).expanduser().resolve()
+        if not checkpoint.is_file():
+            raise FileNotFoundError(f"checkpoint does not exist: {checkpoint}")
+        row["checkpoint_path"] = str(checkpoint)
+        row["checkpoint_hash"] = sha256_file(checkpoint)
+    if row.get("method") in {"flow_proposal", "flow_top4", "full_relaxed_lookahead"}:
+        if not row.get("checkpoint_path"):
+            raise ValueError("FlowAdvantage work items require checkpoint_path")
+        if not row.get("anchor_operations"):
+            raise ValueError(
+                "FlowAdvantage work items require a frozen deep partial-state "
+                "anchor_operations value; shallow/root relaxation is not a valid fallback"
+            )
+    row["reachable_edge_pruning"] = row.get("reachable_edge_pruning", True)
     if row["method"] in {"native_pathfinder", "pathfinder"}:
         mapper = _mapper_path(row)
         if not mapper.is_file():

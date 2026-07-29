@@ -349,7 +349,17 @@
 +	for (Module *m : mods) {
 +		json r; r["native_resource_id"] = m->getFullName(); r["resource_type"] = m->get_type(); r["time_slot"] = m->get_t(); r["capacity"] = 1;
 +		if (PE *pe = dynamic_cast<PE*>(m)) { r["x"] = pe->X; r["y"] = pe->Y; }
-+		if (FU *fu = dynamic_cast<FU*>(m)) { for (auto &op : fu->supportedOPs) r["supported_operations"].push_back(op.first); r["memory_role"] = fu->isMEMFU() ? "memory" : "compute"; }
++		if (FU *fu = dynamic_cast<FU*>(m)) {
++			for (auto &op : fu->supportedOPs) {
++				r["supported_operations"].push_back(op.first);
++				// Preserve the native FU latency table.  Operation support
++				// alone is insufficient to enumerate legal PE/time actions:
++				// different operations on the same FU may advance the modulo
++				// schedule by different amounts.
++				r["operation_latencies"][op.first] = op.second;
++			}
++			r["memory_role"] = fu->isMEMFU() ? "memory" : "compute";
++		}
 +		mrrgj["resources"].push_back(r);
 +		for (auto &kv : m->getconnectedTo()) {
 +			mrrgj["resources"].push_back(serialize_port_resource(kv.first));

@@ -164,14 +164,14 @@ def test_atomic_manifest_roundtrip(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_unwired_method_fails_preflight_instead_of_returning_proxy(
+def test_legacy_method_alias_fails_preflight_instead_of_returning_proxy(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
         "scripts.run_v5b_pilot_queue._git_commit", lambda: "a" * 40
     )
     row = freeze_job(
-        _job(tmp_path, method="flow_top4"), tmp_path / "output"
+        _job(tmp_path, method="top4"), tmp_path / "output"
     )
     spec = tmp_path / "spec.json"
     row.update(
@@ -199,7 +199,7 @@ def test_unwired_method_fails_preflight_instead_of_returning_proxy(
     payload = json.loads((tmp_path / "result.json").read_text())
     assert completed.returncode == 3
     assert payload["status"] == "UNSUPPORTED"
-    assert "refusing to synthesize proxy results" in payload["error_message"]
+    assert "refusing to synthesize" in payload["error_message"]
 
 
 @pytest.mark.parametrize("method", ["dual", "proposal", "top4", "full"])
