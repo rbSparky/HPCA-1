@@ -1,0 +1,91 @@
+{
+  "native_executable_rows": 0,
+  "rows": [
+    {
+      "canonical_json": {
+        "dfg": "eaa19dfd16baf448b338110b41333d0ca9082ffeae795002344849b25dbc75d7",
+        "mapping": "7f8589dd8d2e0194a6c34280f62c93cbcc85a480d007d72e2255ebb98328f3d6",
+        "mrrg": "30427fca01061a8deba2cc5c8fdb47d5f97a1ce6af1c933cf25ca6fbd94e59b6"
+      },
+      "ii": 4,
+      "manifest": "array_cond/A1_stdnoc4x4_recovery1/manifest.env",
+      "native_architecture": "json_arch/stdnoc.json",
+      "native_architecture_sha256": "d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/array_cond/array_cond_PartPredDFG.xml",
+      "native_dfg_sha256": "8231992e869959fa3a356b0e1907c4effbde6d69b5582a84b68c1cd44a9bcff5",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "array_cond/A1_stdnoc4x4_recovery1"
+    },
+    {
+      "canonical_json": {
+        "dfg": "86d9f93ce52270c28608b62bbbadd7ba264bd136765fd9eafe8709eb41cd62a0",
+        "mapping": "abbc78062c9d3f612270e3be822c045fe2705c660bec8f0aa697b37cf418c245",
+        "mrrg": "1e39e3e9bab3454f2831c2b57a685cb5715d68e31ef2608d00feac0314cc4931"
+      },
+      "ii": 4,
+      "manifest": "conv2/A1_stdnoc4x4_paper1/manifest.env",
+      "native_architecture": "json_arch/stdnoc.json",
+      "native_architecture_sha256": "d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6",
+      "native_available": false,
+      "native_binary_sha256": "9aac743390d6d242618b6a0897a9936becf28876d1e01e88ec1fdf7666f2c7ae",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/paper_dfg_v1_20260729/conv2/conv2_PartPredDFG.xml",
+      "native_dfg_sha256": "95e13d7481e2a7b4b41c4c21d1b72aa62e5387c2cd70883118d039815c53637b",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed18-sa-gcc7-9aac743390d6",
+      "pair": "conv2/A1_stdnoc4x4_paper1"
+    },
+    {
+      "canonical_json": {
+        "dfg": "af3df0e412423119e393bf30416686e0550d9685a913903c4ba31ec084f34d15",
+        "mapping": "bfd092b26bce927f4a2ab73d0f8a3e56258770224dc32910dd8393782bac6dbf",
+        "mrrg": "13849ccd1470a37228f23510d2401a5625e556d9eb4c2cd215aee44d23f9b039"
+      },
+      "ii": 4,
+      "manifest": "hpcg/A0_hycube4x4_recovery1/manifest.env",
+      "native_architecture": "json_arch/hycube_original.json",
+      "native_architecture_sha256": "6364da130d2267c5ca40e3bd8b30a372998a6c1fb0bae7e2b80d47dd7c255cbe",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/hpcg/hpcg_PartPredDFG.xml",
+      "native_dfg_sha256": "c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "hpcg/A0_hycube4x4_recovery1"
+    },
+    {
+      "canonical_json": {
+        "dfg": "a2d70feb62d04263a6124c0485fd5b42bc317943e68aa5691014151713e412e9",
+        "mapping": "2ad4a75c7d8d49678a935381f3380ea506a03ff93300d6cf42f538e0ae50eee0",
+        "mrrg": "4299c193189bad9d1f0dec41066a732eabcf992bfac669b0d13fd04c9d4c4d25"
+      },
+      "ii": 5,
+      "manifest": "hpcg/A1_stdnoc4x4_new/manifest.env",
+      "native_architecture": "json_arch/stdnoc.json",
+      "native_architecture_sha256": "d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/hpcg/hpcg_PartPredDFG.xml",
+      "native_dfg_sha256": "c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "hpcg/A1_stdnoc4x4_new"
+    },
+    {
+      "canonical_json": {
+        "dfg": "f3cc79636fd37928285f54f1708a38b82a053a6ceda18b9a189f7b4aa9450f28",
+        "mapping": "44816565cb111edc3d32a319fc82f746d05a562f687730257691afd239ed5827",
+        "mrrg": "8f049916cfe502c60ac72cfb67de6e77a0f7d4505ceba3112b46186b91d92f94"
+      },
+      "ii": 4,
+      "manifest": "trmm/A1_stdnoc4x4_recovery1/manifest.env",
+      "native_architecture": "json_arch/stdnoc.json",
+      "native_architecture_sha256": "d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/trmm/trmm_PartPredDFG.xml",
+      "native_dfg_sha256": "562e3b19507f0aa3a0ef3383f51925f41bf05691f27703b279836f1d57fd99b5",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "trmm/A1_stdnoc4x4_recovery1"
+    }
+  ],
+  "schema": "flowadvantage_native_input_registry_v1"
+}
