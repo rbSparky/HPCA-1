@@ -11,6 +11,18 @@ from .native_mapper import (
     NativeRoute,
     NativeSignal,
 )
+from .native_beam_mapper import (
+    DeterministicNativeBeamMapper,
+    ExactChildActionEvaluator,
+    LengthActionScorer,
+    NativeActionScorer,
+    NativeBeamConfig,
+    NativeBeamMetrics,
+    NativeBeamResult,
+    NativeProgressEvent,
+    ScheduleHorizon,
+    TopKExactRerankScorer,
+)
 
 __all__ = [
     "ADAPTER_VERSION",
@@ -25,4 +37,14 @@ __all__ = [
     "NativePlacement",
     "NativeRoute",
     "NativeSignal",
+    "DeterministicNativeBeamMapper",
+    "ExactChildActionEvaluator",
+    "LengthActionScorer",
+    "NativeActionScorer",
+    "NativeBeamConfig",
+    "NativeBeamMetrics",
+    "NativeBeamResult",
+    "NativeProgressEvent",
+    "ScheduleHorizon",
+    "TopKExactRerankScorer",
 ]

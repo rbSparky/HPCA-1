@@ -136,6 +136,22 @@ class NativeAction:
     placement: NativePlacement
     routes: tuple[NativeRoute, ...]
 
+    def stable_key(self) -> tuple[Any, ...]:
+        return (
+            self.placement.node_key,
+            self.placement.latency,
+            self.placement.dp_id,
+            tuple(
+                (
+                    route.source_key,
+                    route.destination_key,
+                    route.resource_ids,
+                    route.resource_latencies,
+                )
+                for route in self.routes
+            ),
+        )
+
 
 class NativeContractError(ValueError):
     """The exported native contract is missing semantics needed for mapping."""
@@ -587,41 +603,125 @@ class NativeMorpherProblem:
             latency=start_latency,
             source_node=int(self.nodes[source_key]["dfg_node_id"]),
         )
-        # Each heap entry is (hops, path, latencies).  Native paths are simple
-        # in the II-expanded resource graph; prohibiting repeated IDs prevents
-        # artificial routing cycles while explicit wait/register resources
-        # still advance time normally.
-        heap: list[
+        first = self._shortest_temporal_path(
+            source_port,
+            destination_port,
+            start_latency,
+            deadline,
+            state,
+            signal,
+            max_expansions=max_expansions,
+        )
+        if first is None:
+            return ()
+        accepted: list[tuple[tuple[str, ...], tuple[int, ...]]] = [first]
+        candidate_heap: list[
             tuple[int, tuple[str, ...], tuple[int, ...]]
-        ] = [(0, (source_port,), (start_latency,))]
-        routes: list[NativeRoute] = []
-        expansions = 0
-        while heap and len(routes) < k and expansions < max_expansions:
-            _, path, latencies = heappop(heap)
-            current, current_latency = path[-1], latencies[-1]
-            if current == destination_port:
-                if current_latency == deadline:
-                    routes.append(
-                        NativeRoute(
-                            source_key=source_key,
-                            destination_key=destination_key,
-                            source_node=int(self.nodes[source_key]["dfg_node_id"]),
-                            destination_node=destination_node,
-                            edge_type=edge_type,
-                            resource_ids=path,
-                            resource_latencies=latencies,
+        ] = []
+        candidate_seen: set[tuple[str, ...]] = {first[0]}
+        # Deterministic Yen enumeration avoids exponential path-prefix copies
+        # from the former uniform-cost simple-path search.  Every spur search
+        # is a linear BFS over (native resource, absolute latency) states.
+        while len(accepted) < k:
+            previous_path, previous_latencies = accepted[-1]
+            for spur_index in range(len(previous_path) - 1):
+                root_path = previous_path[: spur_index + 1]
+                root_latencies = previous_latencies[: spur_index + 1]
+                blocked_edges = set()
+                for accepted_path, _ in accepted:
+                    if accepted_path[: spur_index + 1] == root_path:
+                        blocked_edges.add(
+                            (
+                                accepted_path[spur_index],
+                                accepted_path[spur_index + 1],
+                            )
                         )
-                    )
-                continue
+                spur = self._shortest_temporal_path(
+                    root_path[-1],
+                    destination_port,
+                    root_latencies[-1],
+                    deadline,
+                    state,
+                    signal,
+                    blocked_nodes=frozenset(root_path[:-1]),
+                    blocked_edges=frozenset(blocked_edges),
+                    max_expansions=max_expansions,
+                )
+                if spur is None:
+                    continue
+                spur_path, spur_latencies = spur
+                path = root_path[:-1] + spur_path
+                latencies = root_latencies[:-1] + spur_latencies
+                if len(path) != len(set(path)) or path in candidate_seen:
+                    continue
+                candidate_seen.add(path)
+                heappush(candidate_heap, (len(path), path, latencies))
+            if not candidate_heap:
+                break
+            _, path, latencies = heappop(candidate_heap)
+            accepted.append((path, latencies))
+        return tuple(
+            NativeRoute(
+                source_key=source_key,
+                destination_key=destination_key,
+                source_node=int(self.nodes[source_key]["dfg_node_id"]),
+                destination_node=destination_node,
+                edge_type=edge_type,
+                resource_ids=path,
+                resource_latencies=latencies,
+            )
+            for path, latencies in accepted
+        )
+
+    def _shortest_temporal_path(
+        self,
+        source_port: str,
+        destination_port: str,
+        start_latency: int,
+        deadline: int,
+        state: "NativeMappingState",
+        signal: NativeSignal,
+        *,
+        blocked_nodes: frozenset[str] = frozenset(),
+        blocked_edges: frozenset[tuple[str, str]] = frozenset(),
+        max_expansions: int,
+    ) -> tuple[tuple[str, ...], tuple[int, ...]] | None:
+        start = (source_port, start_latency)
+        queue = deque((start,))
+        previous: dict[
+            tuple[str, int], tuple[str, int] | None
+        ] = {start: None}
+        expansions = 0
+        goal: tuple[str, int] | None = None
+        while queue and expansions < max_expansions:
+            current, current_latency = queue.popleft()
+            if current == destination_port and current_latency == deadline:
+                goal = (current, current_latency)
+                break
             expansions += 1
             for nxt in self.adjacency.get(current, ()):
-                if nxt in path:
+                if nxt in blocked_nodes or (current, nxt) in blocked_edges:
                     continue
                 phase = self.resources[nxt].get("time_slot")
                 next_latency = current_latency
                 if isinstance(phase, int) and phase >= 0:
                     next_latency += (phase - current_latency) % self.ii
                 if next_latency > deadline:
+                    continue
+                next_state = (nxt, next_latency)
+                if next_state in previous:
+                    continue
+                # Prevent a modulo-cycle from becoming the first predecessor
+                # chain to a temporal state.  Native routes are simple in the
+                # II-expanded resource graph.
+                ancestor: tuple[str, int] | None = (current, current_latency)
+                repeats_resource = False
+                while ancestor is not None:
+                    if ancestor[0] == nxt:
+                        repeats_resource = True
+                        break
+                    ancestor = previous[ancestor]
+                if repeats_resource:
                     continue
                 next_signal = NativeSignal(
                     source_key=signal.source_key,
@@ -631,13 +731,23 @@ class NativeMorpherProblem:
                 )
                 if not state.can_occupy(nxt, next_signal):
                     continue
-                new_path = path + (nxt,)
-                new_latencies = latencies + (next_latency,)
-                heappush(
-                    heap,
-                    (len(new_path) - 1, new_path, new_latencies),
-                )
-        return tuple(routes)
+                previous[next_state] = (current, current_latency)
+                queue.append(next_state)
+        if goal is None:
+            return None
+        states = []
+        cursor: tuple[str, int] | None = goal
+        while cursor is not None:
+            states.append(cursor)
+            cursor = previous[cursor]
+        states.reverse()
+        resources = tuple(resource for resource, _ in states)
+        if len(resources) != len(set(resources)):
+            # Native replay treats one II-expanded port as one capacity
+            # resource.  A repeated resource is a routing cycle, not a legal
+            # wait implementation.
+            return None
+        return resources, tuple(latency for _, latency in states)
 
     def action_for_placement(
         self,
@@ -648,31 +758,109 @@ class NativeMorpherProblem:
     ) -> NativeAction | None:
         """Route all newly completed incoming dependencies deterministically."""
 
-        working = state.copy()
-        if not working.place(placement):
-            return None
-        chosen: list[NativeRoute] = []
+        actions = self.actions_for_placement(
+            placement,
+            state,
+            k_paths=k_paths,
+            max_route_combinations=1,
+        )
+        return actions[0] if actions else None
+
+    def actions_for_placement(
+        self,
+        placement: NativePlacement,
+        state: "NativeMappingState",
+        *,
+        k_paths: int = 4,
+        max_route_combinations: int | None = None,
+        max_route_expansions: int = 1_000_000,
+    ) -> tuple[NativeAction, ...]:
+        """Enumerate routed actions for one target without child-value censoring.
+
+        Every newly enabled physical dependency is routed.  This includes
+        incoming dependencies whose source was already placed and outgoing
+        dependencies to an already placed consumer (for recurrence-aware or
+        otherwise non-topological stable orders).  Route combinations are
+        generated in deterministic lexicographic path order.  A finite
+        ``max_route_combinations`` is an explicit search-budget bound, never
+        described as an exhaustive action universe.
+        """
+
+        initial = state.copy()
+        if not initial.place(placement):
+            return ()
+        enabled: list[dict[str, Any]] = []
         for dependency in self.incoming.get(placement.node_key, ()):
-            if not bool(
-                dependency.get(
-                    "requires_route", dependency.get("edge_type") != "PS"
+            source_key, destination_key = _dependency_key(dependency)
+            if (
+                bool(
+                    dependency.get(
+                        "requires_route", dependency.get("edge_type") != "PS"
+                    )
                 )
+                and source_key in initial.placements
+                and (source_key, destination_key) not in initial.routes
             ):
-                continue
-            source_key, _ = _dependency_key(dependency)
-            source = working.placements.get(source_key)
-            if source is None:
-                continue
-            alternatives = self.enumerate_routes(
-                dependency, source, placement, working, k=k_paths
+                enabled.append(dependency)
+        for dependency in self.outgoing.get(placement.node_key, ()):
+            source_key, destination_key = _dependency_key(dependency)
+            if (
+                bool(
+                    dependency.get(
+                        "requires_route", dependency.get("edge_type") != "PS"
+                    )
+                )
+                and destination_key in initial.placements
+                and (source_key, destination_key) not in initial.routes
+            ):
+                enabled.append(dependency)
+        enabled.sort(key=_dependency_key)
+        frontier: list[tuple[NativeMappingState, tuple[NativeRoute, ...]]] = [
+            (initial, ())
+        ]
+        for dependency in enabled:
+            next_frontier: list[
+                tuple[NativeMappingState, tuple[NativeRoute, ...]]
+            ] = []
+            source_key, destination_key = _dependency_key(dependency)
+            for partial, chosen in frontier:
+                source = partial.placements[source_key]
+                destination = partial.placements[destination_key]
+                alternatives = self.enumerate_routes(
+                    dependency,
+                    source,
+                    destination,
+                    partial,
+                    k=k_paths,
+                    max_expansions=max_route_expansions,
+                )
+                for route in alternatives:
+                    updated = partial.copy()
+                    if updated.add_route(route):
+                        next_frontier.append((updated, chosen + (route,)))
+            next_frontier.sort(
+                key=lambda item: tuple(
+                    (
+                        route.source_key,
+                        route.destination_key,
+                        route.resource_ids,
+                    )
+                    for route in item[1]
+                )
             )
-            if not alternatives:
-                return None
-            route = alternatives[0]
-            if not working.add_route(route):
-                return None
-            chosen.append(route)
-        return NativeAction(placement=placement, routes=tuple(chosen))
+            if max_route_combinations is not None:
+                next_frontier = next_frontier[:max_route_combinations]
+            frontier = next_frontier
+            if not frontier:
+                return ()
+        actions = [
+            NativeAction(placement=placement, routes=routes)
+            for _, routes in frontier
+        ]
+        actions.sort(key=NativeAction.stable_key)
+        if max_route_combinations is not None:
+            actions = actions[:max_route_combinations]
+        return tuple(actions)
 
 
 @dataclass
@@ -822,6 +1010,48 @@ class NativeMappingState:
             self.resource_signals[rid].add(signal)
         self.routes[key] = route
         return True
+
+    def apply_action(self, action: NativeAction) -> "NativeMappingState | None":
+        """Atomically apply an action to a copy of this state."""
+
+        updated = self.copy()
+        if not updated.place(action.placement):
+            return None
+        for route in action.routes:
+            if not updated.add_route(route):
+                return None
+        return updated
+
+    def stable_key(self) -> tuple[Any, ...]:
+        """Exact deterministic state key; no symmetry approximation."""
+
+        return (
+            tuple(
+                (
+                    key,
+                    placement.dp_id,
+                    placement.latency,
+                    placement.operation_latency,
+                )
+                for key, placement in sorted(self.placements.items())
+            ),
+            tuple(
+                (
+                    key,
+                    route.resource_ids,
+                    route.resource_latencies,
+                )
+                for key, route in sorted(self.routes.items())
+            ),
+            tuple(
+                (
+                    rid,
+                    tuple(sorted(signals)),
+                )
+                for rid, signals in sorted(self.resource_signals.items())
+                if signals
+            ),
+        )
 
     @classmethod
     def from_mapping(
