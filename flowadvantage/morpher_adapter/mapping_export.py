@@ -13,7 +13,14 @@ def export_flowadvantage_mapping(mapping, path=None):
     """
     if not isinstance(mapping, dict):
         raise TypeError("mapping must be a dictionary")
-    required = ("architecture_hash", "dfg_hash", "ii", "operations", "routes")
+    required = (
+        "architecture_hash",
+        "dfg_hash",
+        "ii",
+        "operations",
+        "routes",
+        "port_state",
+    )
     missing = [key for key in required if key not in mapping]
     if missing:
         raise ValueError("canonical Morpher mapping is missing " + ", ".join(missing))
@@ -27,6 +34,7 @@ def export_flowadvantage_mapping(mapping, path=None):
         "dependencies": mapping.get("dependencies", []),
         "resources": mapping.get("resources", []),
         "routes": mapping["routes"],
+        "port_state": mapping["port_state"],
         "memory_bindings": mapping.get("memory_bindings", []),
         "metadata": mapping.get("metadata", {}),
     }

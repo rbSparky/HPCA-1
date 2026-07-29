@@ -96,4 +96,6 @@ def import_native_mrrg(path):
         "reverse_adjacency": reverse_adjacency,
         "compute_resource_ids": sorted(r["native_resource_id"] for r in compute),
         "routing_resource_ids": sorted(r["native_resource_id"] for r in routing),
+        "metadata": dict(payload.get("metadata", {})),
+        "raw": payload,
     }

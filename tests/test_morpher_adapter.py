@@ -36,7 +36,7 @@ def test_bb_default(tmp_path): assert import_dfg_xml(_fixture(tmp_path)[0])['nod
 def test_unsupported_count(tmp_path): assert import_dfg_xml(_fixture(tmp_path)[0])['unsupported_compute_nodes']==0
 
 def test_canonical_mapping_export_shape():
-    out=export_flowadvantage_mapping({'architecture_hash':'a','dfg_hash':'d','ii':2,'operations':[],'routes':[]})
+    out=export_flowadvantage_mapping({'architecture_hash':'a','dfg_hash':'d','ii':2,'operations':[],'routes':[],'port_state':[]})
     assert out['schema']=='flowadvantage_morpher_mapping_v1' and out['memory_bindings']==[]
 
 def test_canonical_mapping_export_requires_routes():

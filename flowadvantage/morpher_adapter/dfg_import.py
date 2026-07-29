@@ -84,7 +84,16 @@ def import_native_dfg(path):
         "ii": payload.get("ii"),
         "dfg_hash": payload.get("dfg_hash"),
         "nodes": nodes,
+        "nodes_by_key": node_keys,
         "edges": edges,
-        "count": len(nodes),
-        "unsupported_compute_nodes": sum(not node["operation"]["supported"] for node in nodes.values()),
+        "dependencies": [dict(edge) for edge in payload.get("dependencies", [])],
+        "mutex_basic_blocks": [
+            dict(pair) for pair in payload.get("mutex_basic_blocks", [])
+        ],
+        "metadata": dict(payload.get("metadata", {})),
+        "raw": payload,
+        "count": len(node_keys),
+        "unsupported_compute_nodes": sum(
+            not node["operation"]["supported"] for node in node_keys.values()
+        ),
     }
