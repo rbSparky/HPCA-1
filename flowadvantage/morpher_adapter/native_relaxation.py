@@ -429,6 +429,9 @@ class NativeRelaxationSolver:
 
         endpoint_rhs: list[Any] = []
         flow_constraints: list[cp.Constraint] = []
+        resource_usage_by_source: dict[int, list[Any]] = {
+            index: [] for index in range(len(source_keys))
+        }
         for dependency_index, dependency in enumerate(dependencies):
             source_key, destination_key = _dependency_key(dependency)
             source_distribution = self._endpoint_distribution(
@@ -459,13 +462,25 @@ class NativeRelaxationSolver:
             constraints.append(flow_constraint)
             flow_constraints.append(flow_constraint)
             source_row = source_index[source_key]
+            resource_usage = cp.maximum(
+                outgoing @ f[dependency_index, :],
+                incoming @ f[dependency_index, :],
+            )
+            resource_usage_by_source[source_row].append(resource_usage)
             constraints.extend(
                 (
-                    outgoing @ f[dependency_index, :] <= z[source_row, :],
-                    incoming @ f[dependency_index, :] <= z[source_row, :],
+                    resource_usage <= z[source_row, :],
                     f[dependency_index, :] <= w[source_row, :],
                 )
             )
+        actual_resource_usage = [
+            (
+                values[0]
+                if len(values) == 1
+                else cp.max(cp.vstack(values), axis=0)
+            )
+            for _, values in sorted(resource_usage_by_source.items())
+        ]
 
         # Fixed occupancy and native broadcast/mutex semantics.
         fixed_resource_sources = {
@@ -510,7 +525,14 @@ class NativeRelaxationSolver:
             problem, source_keys
         )
         routing_constraints: list[
-            tuple[str, tuple[int, ...], np.ndarray, cp.Constraint]
+            tuple[
+                str,
+                tuple[int, ...],
+                np.ndarray,
+                cp.Constraint,
+                np.ndarray,
+                np.ndarray,
+            ]
         ] = []
         non_mux_columns = np.asarray(
             [
@@ -546,7 +568,14 @@ class NativeRelaxationSolver:
             )
             constraints.append(constraint)
             routing_constraints.append(
-                ("resource", rows_in_clique, non_mux_columns, constraint)
+                (
+                    "resource",
+                    rows_in_clique,
+                    non_mux_columns,
+                    constraint,
+                    coefficients,
+                    fixed_count,
+                )
             )
 
             edge_coefficients = np.ones(
@@ -577,6 +606,8 @@ class NativeRelaxationSolver:
                     rows_in_clique,
                     np.arange(e_count),
                     edge_constraint,
+                    edge_coefficients,
+                    edge_fixed_count,
                 )
             )
 
@@ -611,6 +642,7 @@ class NativeRelaxationSolver:
             assignment_constraints=assignment_constraints,
             compute_constraints=compute_constraints,
             routing_constraints=routing_constraints,
+            actual_resource_usage=actual_resource_usage,
         )
 
     @staticmethod
@@ -695,8 +727,16 @@ class NativeRelaxationSolver:
         assignment_constraints: Sequence[tuple[str, list[int], cp.Constraint]],
         compute_constraints: Sequence[tuple[str, list[int], cp.Constraint]],
         routing_constraints: Sequence[
-            tuple[str, tuple[int, ...], np.ndarray, cp.Constraint]
+            tuple[
+                str,
+                tuple[int, ...],
+                np.ndarray,
+                cp.Constraint,
+                np.ndarray,
+                np.ndarray,
+            ]
         ],
+        actual_resource_usage: Sequence[Any] = (),
     ) -> NativeRelaxationResult:
         used = ""
         errors = []
@@ -805,7 +845,7 @@ class NativeRelaxationSolver:
                         initial=0.0,
                     )
                 )
-                for _, _, _, constraint in routing_constraints
+                for _, _, _, constraint, _, _ in routing_constraints
             ),
             default=0.0,
         )
@@ -819,16 +859,28 @@ class NativeRelaxationSolver:
         resource_duals = np.zeros(len(resource_ids), dtype=float)
         edge_duals = np.zeros(len(edge_ids), dtype=float)
         resource_slacks = np.ones(len(resource_ids), dtype=float)
-        for kind, _, columns, constraint in routing_constraints:
+        actual_usage_values = (
+            np.vstack(
+                [
+                    np.asarray(value.value, dtype=float).reshape(-1)
+                    for value in actual_resource_usage
+                ]
+            )
+            if actual_resource_usage
+            else np.zeros((0, len(resource_ids)), dtype=float)
+        )
+        for kind, rows, columns, constraint, coefficients, fixed_count in routing_constraints:
             dual = np.maximum(
                 np.asarray(constraint.dual_value, dtype=float).reshape(-1), 0.0
             )
             if kind == "resource":
                 resource_duals[columns] += dual
-                slack = np.maximum(
-                    -np.asarray(constraint.expr.value, dtype=float).reshape(-1),
-                    0.0,
+                actual_lhs = np.sum(
+                    coefficients
+                    * actual_usage_values[np.ix_(rows, columns)],
+                    axis=0,
                 )
+                slack = np.maximum(1.0 - fixed_count - actual_lhs, 0.0)
                 resource_slacks[columns] = np.minimum(
                     resource_slacks[columns], slack
                 )
