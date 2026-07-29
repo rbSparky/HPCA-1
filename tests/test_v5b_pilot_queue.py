@@ -94,6 +94,26 @@ def test_semantic_change_produces_new_work_identity(tmp_path, monkeypatch):
     assert first["config_hash"] != second["config_hash"]
 
 
+def test_semantic_hash_survives_csv_type_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.run_v5b_pilot_queue._git_commit", lambda: "a" * 40
+    )
+    row = freeze_job(
+        _job(
+            tmp_path,
+            budget_seconds=3600,
+            initialization_depth_fraction=0.4,
+            full_end_to_end=True,
+            reachable_edge_pruning=True,
+        ),
+        tmp_path / "output",
+    )
+    manifest = tmp_path / "manifest.csv"
+    atomic_csv(manifest, [row])
+    restored = read_manifest(manifest)[0]
+    assert config_hash(restored) == row["config_hash"]
+
+
 def test_balanced_order_covers_axes_in_early_tranche():
     rows = [
         {

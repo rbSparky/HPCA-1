@@ -143,6 +143,34 @@ SEMANTIC_FIELDS = (
     "device",
 )
 
+_SEMANTIC_INTEGER_FIELDS = frozenset(
+    {
+        "seed",
+        "budget_seconds",
+        "timeout_seconds",
+        "x",
+        "y",
+        "initial_ii",
+        "native_method",
+        "native_max_iter",
+        "beam_width",
+        "k_paths",
+        "action_limit",
+        "max_expansions",
+        "anchor_operations",
+    }
+)
+_SEMANTIC_FLOAT_FIELDS = frozenset(
+    {
+        "initialization_depth_fraction",
+        "relaxation_tau",
+        "relaxation_timeout",
+    }
+)
+_SEMANTIC_BOOLEAN_FIELDS = frozenset(
+    {"full_end_to_end", "reachable_edge_pruning"}
+)
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -182,8 +210,32 @@ def canonical_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _semantic_value(field: str, value: Any) -> Any:
+    """Canonicalize typed config values across durable CSV round trips."""
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return ""
+    if field in _SEMANTIC_INTEGER_FIELDS:
+        return int(value)
+    if field in _SEMANTIC_FLOAT_FIELDS:
+        return float(value)
+    if field in _SEMANTIC_BOOLEAN_FIELDS:
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError(f"invalid semantic Boolean {field}={value!r}")
+    return str(value)
+
+
 def semantic_config(row: dict[str, Any]) -> dict[str, Any]:
-    return {field: row.get(field, "") for field in SEMANTIC_FIELDS}
+    return {
+        field: _semantic_value(field, row.get(field, ""))
+        for field in SEMANTIC_FIELDS
+    }
 
 
 def config_hash(row: dict[str, Any]) -> str:
