@@ -1,0 +1,75 @@
+# FlowAdvantage paper-suite v2: frozen execution contract.
+# This file specifies jobs and provenance; it contains no observed outcomes.
+experiment:
+  name: flowadvantage_paper_suite_v2
+  master_seed: 24072026
+  deadline_ist: '2026-07-31T23:59:00+05:30'
+  output_dir: results/paper_suite_v2
+  source_repo: https://github.com/rbSparky/HPCA-1
+  deterministic: true
+  initialization_policy: deterministic_length_prefix
+  initialization_depth_fraction: 0.40
+  evaluation_mode: deterministic_length_prefix_then_complete
+  full_end_to_end: true
+  no_parent_status: UNSUPPORTED_UNTIL_DIRECT_L_REL_CHECKPOINT
+
+toolchain:
+  morpher_commit: 9a9dce7aea521f1d5ef33686f57ca84864edb3c9
+  docker_image: quotientflow-morpher-v5b-native-fixed18-sa
+  docker_digest: sha256:46d19ce00d59b279c4d1e0e7bdcc09072eb13c1ae1d28a33e7bbb1dce65eb33f
+  adapter_schema: flowadvantage_morpher_mapping_v1
+  native_dfg_schema: flowadvantage_morpher_dfg_v1
+  native_mrrg_schema: flowadvantage_morpher_mrrg_v1
+  patch_manifest: results/revision_v5b/morpher_patch/PATCH_MANIFEST.md
+
+architectures:
+  - {id: A0_hycube4x4, role: standard}
+  - {id: A1_stdnoc4x4, role: richer_interconnect}
+  - {id: A2_hycube4x4_mem_variant, role: constrained_memory}
+  - {id: A3_hycube8x8, role: held_out_size}
+
+kernels:
+  frozen_pilot: [array_add, array_cond, hpcg, trmm, gemm_nt, fix_fft]
+  compiler_derived_v2: [fir, conv2, conv3, mac]
+  all: [array_add, array_cond, hpcg, trmm, gemm_nt, fix_fft, fir, conv2, conv3, mac]
+  unsupported_compute_fraction_max: 0.10
+  selection_frozen_before_results: true
+
+methods:
+  deterministic: [length, dual_linear, flow_proposal, flow_top4]
+  stochastic: [simulated_annealing]
+  stochastic_seeds: [11, 23, 37]
+  native_baselines: [pathfinder, simulated_annealing]
+  full_relaxed_subset: [array_add, gemm_nt, fix_fft]
+  full_relaxed_architectures: [A0_hycube4x4, A1_stdnoc4x4, A2_hycube4x4_mem_variant]
+  explicitly_unsupported: [flow_noparent_top4, flow_noparent_proposal, lisa]
+
+initialization:
+  policy: deterministic_length_prefix
+  depth_fraction: 0.40
+  source_state: empty
+  witness_usage: latency_metadata_only
+  witness_placements_or_routes: forbidden
+
+budgets:
+  standard_seconds: [30, 120, 600]
+  full_relaxed_seconds: 3600
+  per_ii_seconds: 120
+  ii_search_delta: 4
+  queue_concurrency_cpu: 1
+  queue_concurrency_gpu: 1
+
+statistics:
+  bootstrap_resamples: 10000
+  bootstrap_seed: 24072026
+  borderline_relative_window: 0.05
+  paired_only: true
+  timeout_is_mapping_failure: false
+
+readiness_gates:
+  - adapter_roundtrip_and_simulation
+  - native_legality_and_independent_legality
+  - deterministic_prefix_smoke
+  - baseline_and_flow_paired_smoke
+  - atomic_queue_recovery_smoke
+  - frozen_hash_manifest
