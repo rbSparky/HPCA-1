@@ -208,6 +208,13 @@ class NativeMorpherProblem:
             if previous is not None and previous != record:
                 raise NativeContractError(f"conflicting MRRG resource {rid}")
             self.resources[rid] = record
+        # Stable integer IDs make exact simple-path checks O(1) bit tests.  The
+        # bit mask only replaces the former ancestor walk; BFS ordering and
+        # first-predecessor semantics remain unchanged.
+        self.resource_index = {
+            resource_id: index
+            for index, resource_id in enumerate(sorted(self.resources))
+        }
         self.adjacency: dict[str, tuple[str, ...]] = {
             rid: () for rid in self.resources
         }
@@ -687,14 +694,15 @@ class NativeMorpherProblem:
         max_expansions: int,
     ) -> tuple[tuple[str, ...], tuple[int, ...]] | None:
         start = (source_port, start_latency)
-        queue = deque((start,))
+        start_mask = 1 << self.resource_index[source_port]
+        queue = deque(((source_port, start_latency, start_mask),))
         previous: dict[
             tuple[str, int], tuple[str, int] | None
         ] = {start: None}
         expansions = 0
         goal: tuple[str, int] | None = None
         while queue and expansions < max_expansions:
-            current, current_latency = queue.popleft()
+            current, current_latency, path_mask = queue.popleft()
             if current == destination_port and current_latency == deadline:
                 goal = (current, current_latency)
                 break
@@ -713,15 +721,10 @@ class NativeMorpherProblem:
                     continue
                 # Prevent a modulo-cycle from becoming the first predecessor
                 # chain to a temporal state.  Native routes are simple in the
-                # II-expanded resource graph.
-                ancestor: tuple[str, int] | None = (current, current_latency)
-                repeats_resource = False
-                while ancestor is not None:
-                    if ancestor[0] == nxt:
-                        repeats_resource = True
-                        break
-                    ancestor = previous[ancestor]
-                if repeats_resource:
+                # II-expanded resource graph.  This is exactly the prior
+                # ancestor walk expressed as a stable integer bit test.
+                next_bit = 1 << self.resource_index[nxt]
+                if path_mask & next_bit:
                     continue
                 next_signal = NativeSignal(
                     source_key=signal.source_key,
@@ -732,7 +735,7 @@ class NativeMorpherProblem:
                 if not state.can_occupy(nxt, next_signal):
                     continue
                 previous[next_state] = (current, current_latency)
-                queue.append(next_state)
+                queue.append((nxt, next_latency, path_mask | next_bit))
         if goal is None:
             return None
         states = []
