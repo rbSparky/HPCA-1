@@ -604,3 +604,42 @@ diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_M
  // by Yujie
  void CGRAXMLCompile::CGRA::PrintMappingForPillars(string fileName_i, string fileName_r){
  	DataPrepare();
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/dfg/DFG.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/dfg/DFG.cpp
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/dfg/DFG.cpp	2026-07-25 06:35:43.198353068 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/dfg/DFG.cpp	2026-07-29 02:51:58.701473813 +0000
+@@ -227,7 +227,12 @@
+ 
+ //				if(type == 0){
+ 				if(std::string(type)=="P"){
+-					int npb;
++					// Older checked-in Morpher DFGs omit NPB for a
++					// non-negated predicate. The previous uninitialized local
++					// made parsing depend on stack contents and could abort
++					// before mapping. Missing NPB is the documented/default
++					// non-negated case; explicit values remain strictly 0/1.
++					int npb = 0;
+ 					output->QueryIntAttribute("NPB", &npb);
+ 					output_ss<< "npb = " << npb;
+ 					assert(npb == 0 || npb == 1);
+diff -ruN '--exclude=build' results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp
+--- results/revision_v5/toolchain/morpher/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-25 06:35:43.202019731 +0000
++++ results/revision_v5b/morpher_patch/Morpher_CGRA_Mapper/src/mapper/HeuristicMapper.cpp	2026-07-29 02:57:14.580890170 +0000
+@@ -1905,7 +1905,17 @@
+ 	if(!check_parent_violation) { return false;}
+ 	for (DFGNode *recParent : node->recParents)
+ 	{
+-		assert(recParent->rootDP != NULL); //should be mapped
++		// Backtracking can temporarily unmap an earlier recurrence parent while
++		// a dependent memory operation is reconsidered.  Dereferencing it is
++		// neither a legality check nor a recoverable mapper outcome.  Reject the
++		// candidate until its recurrence anchor is placed; this is conservative
++		// and preserves the original recurrence inequality below.
++		if (recParent->rootDP == NULL)
++		{
++			LOG(ROUTE) << "rejecting candidate with unmapped recurrence parent: "
++					   << node->idx << " <- " << recParent->idx << "\n";
++			return true;
++		}
+ 		DataPath *recParentDP = recParent->rootDP;
+ 		//	assert(false);
+ 		//	std::cout << "RecParent = " << recParent->idx << ",";

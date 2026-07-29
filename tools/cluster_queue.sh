@@ -103,7 +103,12 @@ open(sys.argv[2], 'w', encoding='utf-8').write('#!/usr/bin/env bash\nexec ' + ' 
 PY
 chmod 700 "$run_dir/command.sh"
 set +e
-( cd "$project" && export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 && export $gpu_env && micromamba run -p "$env_path" "$run_dir/command.sh" ) > "$run_dir/stdout.log" 2> "$run_dir/stderr.log"
+(
+  cd "$project"
+  export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+  if [[ -n "$gpu_env" ]]; then export "$gpu_env"; fi
+  micromamba run -p "$env_path" "$run_dir/command.sh"
+) > "$run_dir/stdout.log" 2> "$run_dir/stderr.log"
 rc=$?
 set -e
 printf 'EXIT_CODE=%s\nENDED_AT=%s\n' "$rc" "$(date -Iseconds)" >> "$run_dir/manifest.env"
