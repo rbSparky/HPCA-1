@@ -32,7 +32,7 @@ sync_source() {
 remote_bash() {
   local forwarded=""
   local name quoted
-  for name in RUN_ID RUN_NAME ENCODED_CMD REMOTE_DIR RUN_ROOT MAMBA_ENV GPU RESOURCE_POOL; do
+  for name in RUN_ID RUN_NAME ENCODED_CMD REMOTE_DIR RUN_ROOT MAMBA_ENV GPU RESOURCE_POOL CPU_SLOT; do
     if [[ -v "$name" ]]; then
       printf -v quoted '%q' "${!name}"
       forwarded+="${name}=${quoted} "
@@ -73,6 +73,7 @@ mkdir -p "$run_dir"
 printf 'RUN_ID=%q\nNAME=%q\nSUBMITTED_AT=%q\nGPU=%q\nENV=%q\nREMOTE_DIR=%q\n' \
   "$RUN_ID" "$RUN_NAME" "$(date -Iseconds)" "$GPU" "$MAMBA_ENV" "$REMOTE_DIR" > "$run_dir/manifest.env"
 printf 'RESOURCE_POOL=%q\n' "$RESOURCE_POOL" >> "$run_dir/manifest.env"
+printf 'CPU_SLOT=%q\n' "${CPU_SLOT:-auto}" >> "$run_dir/manifest.env"
 python3 - "$ENCODED_CMD" "$run_dir/argv.json" <<'PY'
 import base64, json, sys
 parts = base64.b64decode(sys.argv[1]).split(b'\0')[:-1]
@@ -86,7 +87,15 @@ run_dir="$1"; project="$2"; env_path="$3"; gpu="$4"; pool="${RESOURCE_POOL:-gpu0
 if [[ "$pool" == cpu ]]; then
   # Deterministic eight-slot CPU pool. Jobs sharing a slot serialize; the
   # eight slot locks permit independent workers without a nested process pool.
-  slot=$(cksum <<< "$(basename "$run_dir")" | awk '{print $1 % 8}')
+  if [[ -n "${CPU_SLOT:-}" ]]; then
+    [[ "$CPU_SLOT" =~ ^[0-7]$ ]] || {
+      echo "CPU_SLOT must be an integer from 0 through 7" >&2
+      exit 2
+    }
+    slot="$CPU_SLOT"
+  else
+    slot=$(cksum <<< "$(basename "$run_dir")" | awk '{print $1 % 8}')
+  fi
   lock="$HOME/.quotientflow_cpu${slot}.lock"
   gpu_env=""
 else
@@ -154,6 +163,8 @@ Usage:
 
 `submit` is append-only and serializes GPU0 jobs through a remote flock.
 It never deletes remote files; `pull` refuses to overwrite local artifacts.
+CPU jobs may set `CPU_SLOT=0` through `CPU_SLOT=7` to select an explicit
+independent lock; otherwise a deterministic run-ID hash selects the slot.
 USAGE
 }
 

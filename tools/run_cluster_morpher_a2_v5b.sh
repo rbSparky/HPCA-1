@@ -12,10 +12,10 @@ source_root="$toolchain/source/Morpher_CGRA_Mapper"
 case "$kernel" in
   fix_fft)
     source_arch="$source_root/json_arch/fft_various_mem_archs/stdnoc_mem_dual_port_two_banked.json"
-    # This is Morpher's checked-in, natively mapped FFT DFG.  Unlike the
-    # legacy fix_fft_npb artifact, it carries every BasePointerName required
-    # to apply the checked-in memory layout.
-    dfg_rel="applications/sample_xmls/fix_fft_INNERMOST_LN121_DFG.xml"
+    # The PartPred DFG carries every BasePointerName required by the checked-in
+    # memory layout.  The fixed15 native mapper disambiguates its self-
+    # recurrence routing sentinel from a same-index fanout destination.
+    dfg_rel="applications/fix_fft_npb/fix_fft_INNERMOST_LN111_PartPred_DFG.xml"
     required=(fr manupa1 l.1253 conv31252 fi shl29 conv.i conv.i241)
     ;;
   gemm_nt)

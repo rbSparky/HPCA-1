@@ -1,0 +1,86 @@
+{
+  "bank_count": 2,
+  "bank_size": 2048,
+  "conversion": "flat_address = source_bank * bank_size + source_local_address",
+  "emitted_variables": [
+    "conv.i",
+    "conv.i241",
+    "conv31252",
+    "fi",
+    "fr",
+    "l.1253",
+    "manupa1",
+    "shl29"
+  ],
+  "records": [
+    {
+      "derived_flat_address": 134,
+      "source_bank": 0,
+      "source_local_address": 134,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "conv31252"
+    },
+    {
+      "derived_flat_address": 0,
+      "source_bank": 0,
+      "source_local_address": 0,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "fr"
+    },
+    {
+      "derived_flat_address": 130,
+      "source_bank": 0,
+      "source_local_address": 130,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "l.1253"
+    },
+    {
+      "derived_flat_address": 128,
+      "source_bank": 0,
+      "source_local_address": 128,
+      "source_module": "SPM_B0_WRAPPER",
+      "variable": "manupa1"
+    },
+    {
+      "derived_flat_address": 2180,
+      "source_bank": 1,
+      "source_local_address": 132,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "conv.i"
+    },
+    {
+      "derived_flat_address": 2184,
+      "source_bank": 1,
+      "source_local_address": 136,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "conv.i241"
+    },
+    {
+      "derived_flat_address": 2048,
+      "source_bank": 1,
+      "source_local_address": 0,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "fi"
+    },
+    {
+      "derived_flat_address": 2176,
+      "source_bank": 1,
+      "source_local_address": 128,
+      "source_module": "SPM_B1_WRAPPER",
+      "variable": "shl29"
+    }
+  ],
+  "required_variables": [
+    "conv.i",
+    "conv.i241",
+    "conv31252",
+    "fi",
+    "fr",
+    "l.1253",
+    "manupa1",
+    "shl29"
+  ],
+  "schema": "morpher_mem_alloc_derivation_v1",
+  "source_architecture": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed16-gcc7-7c00eeec88fb/source/Morpher_CGRA_Mapper/json_arch/fft_various_mem_archs/stdnoc_mem_dual_port_two_banked.json",
+  "source_architecture_sha256": "9cae818d0408b59a19cca457a78e941b7ffc74b4671b10b75650a21d3e009daf"
+}

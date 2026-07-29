@@ -5,7 +5,7 @@ Host alias: `mll5090`
 Host: Ubuntu 24.04.2, Linux 6.8.0-84, AMD Threadripper PRO 7965WX
 (24 physical cores / 48 threads), 125 GiB RAM.
 
-## Authoritative runtime
+## Current authoritative runtime
 
 The cluster has no Docker, Podman, Apptainer, Singularity, or root access.
 Recompiling the legacy mapper with host GCC 13 is not an equivalent runtime:
@@ -13,28 +13,33 @@ although it builds, the array-add native smoke crashes in legacy undefined
 behavior before parsing completes. That build remains recorded only as a
 portability diagnostic.
 
-The authoritative runtime therefore uses the exact GCC-7 executable extracted
-from the locally validated Docker image, on the cluster host's backward-
-compatible glibc/libstdc++ runtime:
+The current authoritative runtime uses the exact GCC-7 executable extracted
+from the locally validated fixed17 Docker image, on the cluster host's
+backward-compatible glibc/libstdc++ runtime. Fixed17 accumulates the validated
+native JSON bridge, self-recurrence/fanout disambiguation, memory-import
+identity ordering, and native FU operation-latency export:
 
 ```text
 Morpher base commit:
   9a9dce7aea521f1d5ef33686f57ca84864edb3c9
 Bridge patch SHA-256:
-  4894054e67eb43f16ad0a40bcbf9783305b67612925a3ea5b0d7acdfd11fad54
-Source-tree SHA-256:
-  888f3213f34ef66c6ff9e96b66515d0d3bbc6b11020c325629dbe38a1c9a494e
-Source archive SHA-256:
-  c5089d5dde28920b66d3e089fd2eae7e2686fc4dcd90e02cc9ae43b666f67a5b
+  dc4b4d82a6c127279a682861e2306f6e9ca68b7e3df77f37a50c0655cc1c041b
+Self-recurrence/fanout patch SHA-256:
+  1b887fb218818979535088a4c2c57c109ec1fb0514f456ac22b5f1b647a1ecd8
+Memory-import identity patch SHA-256:
+  69d6eb2f58e509852d19018b946955805053ed81883360c81a4c24b0e8c8276e
 Docker image:
-  quotientflow-morpher-v5b-native-fixed14@
-  sha256:f1dee9de88d0935ccb1825200040e090abf78ff76140bb0e8d494c00862c9088
+  quotientflow-morpher-v5b-native-fixed17@
+  sha256:4581c2c9a868ffd129609c5b962417e1d8ff3e84cbe2890a6d1364101e901957
 Exact mapper binary SHA-256:
-  af402f1b7f2077f074ec983fb1965f1cfb530465303bd891bff3a495da8c5c87
+  2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f
 Remote immutable prefix:
   /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/
-  morpher-fixed14-gcc7-af402f1b7f20
+  morpher-fixed17-gcc7-2b49863713eb
 ```
+
+The earlier fixed14 prefix and every result produced with it remain immutable;
+they are not silently reinterpreted as fixed17 results.
 
 The source archive and binary were copied to content-addressed, append-only
 paths under `.cluster_inputs`. Installation was executed through
@@ -57,52 +62,56 @@ tar -C results/revision_v5b/morpher_patch \
   Morpher_CGRA_Mapper
 ```
 
-The exact executable was extracted from the validated image:
+The exact executable is extracted from the selected validated image:
 
 ```bash
-cid=$(docker create quotientflow-morpher-v5b-native-fixed14)
+cid=$(docker create quotientflow-morpher-v5b-native-fixed17)
 docker cp \
   "$cid:/home/user/morpher/Morpher_CGRA_Mapper/build/src/cgra_xml_mapper" \
-  /tmp/cgra_xml_mapper_fixed14_gcc7
+  /tmp/cgra_xml_mapper_fixed17_gcc7
 docker rm "$cid"
 ```
 
-The remote installation job was:
+The current remote installation job was:
 
 ```bash
 RESOURCE_POOL=cpu bash tools/cluster_queue.sh submit \
-  morpher_fixed14_install_gcc7 -- \
+  morpher_fixed17_install_gcc7 -- \
+  env MORPHER_VARIANT=fixed17 \
+  BRIDGE_PATCH_SHA256=69d6eb2f58e509852d19018b946955805053ed81883360c81a4c24b0e8c8276e \
+  SOURCE_DOCKER_IMAGE=quotientflow-morpher-v5b-native-fixed17@sha256:4581c2c9a868ffd129609c5b962417e1d8ff3e84cbe2890a6d1364101e901957 \
   bash tools/install_cluster_morpher_binary_v5b.sh \
-  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/qf_morpher_fixed14_888f3213.tar.gz \
-  c5089d5dde28920b66d3e089fd2eae7e2686fc4dcd90e02cc9ae43b666f67a5b \
-  888f3213f34ef66c6ff9e96b66515d0d3bbc6b11020c325629dbe38a1c9a494e \
-  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/cgra_xml_mapper_fixed14_gcc7_8d1de1c0 \
-  af402f1b7f2077f074ec983fb1965f1cfb530465303bd891bff3a495da8c5c87
+  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/qf_morpher_fixed17_28a220b0.tar.gz \
+  28a220b094046a7083cc29dfb546171b5094f6bcb9d07db388b4f39b68b8355d \
+  28a220b094046a7083cc29dfb546171b5094f6bcb9d07db388b4f39b68b8355d \
+  /home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/cgra_xml_mapper_fixed17_2b498637 \
+  2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f
 ```
 
-Queue run: `20260729T080652Z_morpher_fixed14_install_gcc7`.
+Queue run: `20260729T083454Z_morpher_fixed17_install_gcc7`.
 
 ## Native dump smoke
 
-The authoritative runtime completed the native array-add PathFinder mapping and
-emitted the three bridge contracts:
+Fixed17 completed the native array-add PathFinder mapping and emitted the
+three bridge contracts. All 64 FU records contained complete latency maps,
+and each latency-map opcode set exactly matched the FU supported-opcode set:
 
 ```text
 II: 4
 operations: 20
 routes: 23
-wall time: 7.897727 s
+wall time: 7.947608 s
 dfg.json SHA-256:
   498762341449ad1507b14dcb19954cb7dbf10ddb73f1df208c5ce43180c76bd8
 mrrg.json SHA-256:
   cacd7a0ec93a43b05db4d4ed2f2d31040d99ae9b5061464026228760ac8b3f7e
 mapping.json SHA-256:
-  2a9293ece5da59f9a08c95d1accb1442d62c9c9c2bbd1a8d07cf40620c4b2a56
+  45db4456b5cdafb8772554f39b891f397edec73ebed3489353134f0bd9a70ffc
 ```
 
-Queue run: `20260729T080713Z_morpher_fixed14_gcc7_array_smoke`.
+Queue run: `20260729T083534Z_morpher_fixed17_gcc7_latency_smoke`.
 
-Pulled immutable output:
+The original fixed14 smoke remains at
 `results/revision_v5b/cluster/smoke_array_add_fixed14_gcc7/`.
 
 Thread limits applied by the queue:
@@ -177,3 +186,34 @@ inside native `assignPath`; the otherwise mapped sample FFT DFG contains the
 official memory variables but also at least one native memory operation with
 no `BasePointerName`, causing `UpdateVariableBaseAddr` to reject it before
 search. No missing pointer identity was inferred or fabricated.
+
+Fixed16 subsequently corrected the native self-recurrence/fanout sentinel
+collision, allowing the actual PartPred FFT DFG to map with its official
+two-bank layout in 60.239 seconds at II 5 (58 operations, 90 dependencies,
+77 physical routes and 13 pseudo dependencies). Independent FlowAdvantage
+legality passed with zero violations.
+
+Fixed17 then corrected memory-import identity ordering and exported FU latency
+tables. Native fixed17 reimport produced exact semantic round trips for both
+A2 memory references:
+
+| Kernel | II | Placements | Routes | Placement match | Route match | Independent legality |
+|---|---:|---:|---:|---|---|---|
+| `gemm_nt` | 8 | 52 | 72 | exact | exact | PASS |
+| `fix_fft` | 5 | 58 | 77 | exact | exact | PASS |
+
+The fixed17 reimport jobs took 29.586 and 23.401 seconds respectively.
+All 128 GEMM FU records and all 80 FFT FU records carried latency maps whose
+opcode sets exactly matched native operation support.
+
+Queue runs:
+
+```text
+20260729T083646Z_morpher_fixed17_gemm_a2_native_reimport
+20260729T083803Z_morpher_fixed17_fixfft_a2_native_reimport
+```
+
+The exact reimport interface is implemented by
+`tools/run_cluster_morpher_reimport_v5b.sh`; it requires native import PASS,
+then compares II, every operation placement/time assignment, and every ordered
+route resource/link/latency sequence before atomically exposing a result.

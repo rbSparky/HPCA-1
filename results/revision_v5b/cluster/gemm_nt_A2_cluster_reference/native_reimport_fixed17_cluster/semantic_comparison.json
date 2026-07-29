@@ -1,0 +1,11 @@
+{
+  "ii_after": 8,
+  "ii_before": 8,
+  "ii_match": true,
+  "operation_count": 52,
+  "placement_match": true,
+  "route_count": 72,
+  "route_match": true,
+  "schema": "morpher_semantic_roundtrip_v1",
+  "wall_seconds": 29.585999727249146
+}
