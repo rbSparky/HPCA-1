@@ -1,0 +1,30 @@
+{
+  "schema": "flowadvantage_v5b_pilot_jobs_v1",
+  "description": "End-to-end length baseline at the frozen empty-state 40% deterministic prefix.",
+  "jobs": [
+    {
+      "kernel": "array_add",
+      "architecture": "A0_hycube4x4",
+      "method": "length",
+      "seed": 0,
+      "budget_seconds": 3600,
+      "timeout_seconds": 3600,
+      "dfg_path": "results/revision_v5b/reference_mappings/array_add/A0_hycube4x4_standard_fixed17_smoke/dfg.json",
+      "architecture_path": "results/revision_v5b/reference_mappings/array_add/A0_hycube4x4_standard_fixed17_smoke/mrrg.json",
+      "reference_mapping_path": "results/revision_v5b/reference_mappings/array_add/A0_hycube4x4_standard_fixed17_smoke/mapping.json",
+      "x": 4,
+      "y": 4,
+      "initial_ii": 4,
+      "pe_type": "HyCUBE_4REG",
+      "evaluation_mode": "deterministic_length_prefix_then_complete",
+      "full_end_to_end": true,
+      "initialization_policy": "deterministic_length_prefix",
+      "initialization_depth_fraction": 0.4,
+      "beam_width": 4,
+      "k_paths": 4,
+      "action_limit": 24,
+      "max_expansions": 5000,
+      "reachable_edge_pruning": true
+    }
+  ]
+}
