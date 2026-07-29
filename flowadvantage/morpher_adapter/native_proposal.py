@@ -198,6 +198,8 @@ class NativeRelaxationParentContextProvider:
         self.last_result: Any | None = None
         self.calls = 0
         self.cache_hits = 0
+        self.request_wall_seconds = 0.0
+        self.cache_read_seconds = 0.0
         self.logical_solve_seconds = 0.0
         self.canonicalization_seconds = 0.0
 
@@ -207,15 +209,21 @@ class NativeRelaxationParentContextProvider:
         state: NativeMappingState,
     ) -> NativeParentRelaxationContext:
         self.calls += 1
+        request_start = time.perf_counter()
         result = self.solver.solve(problem, state)
+        request_seconds = time.perf_counter() - request_start
         self.last_result = result
-        self.cache_hits += int(bool(getattr(result, "cache_hit", False)))
-        self.logical_solve_seconds += float(
-            getattr(result, "solve_seconds", 0.0)
-        )
-        self.canonicalization_seconds += float(
-            getattr(result, "canonicalization_seconds", 0.0)
-        )
+        self.request_wall_seconds += request_seconds
+        if bool(getattr(result, "cache_hit", False)):
+            self.cache_hits += 1
+            self.cache_read_seconds += request_seconds
+        else:
+            self.logical_solve_seconds += float(
+                getattr(result, "solve_seconds", 0.0)
+            )
+            self.canonicalization_seconds += float(
+                getattr(result, "canonicalization_seconds", 0.0)
+            )
         if not bool(getattr(result, "feasible", False)):
             raise NativeProposalCompatibilityError(
                 "parent native relaxation is not feasible: "

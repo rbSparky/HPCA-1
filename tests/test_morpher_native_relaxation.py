@@ -234,3 +234,6 @@ def test_exact_child_evaluator_produces_finite_native_action_ranking(
     assert evaluator.total_cache_hits == sum(
         record.cache_hit for record in evaluator.last_evaluations
     )
+    assert evaluator.total_request_wall_seconds > 0.0
+    assert evaluator.total_cache_read_seconds >= 0.0
+    assert evaluator.total_solve_seconds >= 0.0

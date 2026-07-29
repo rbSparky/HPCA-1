@@ -232,6 +232,10 @@ def test_native_relaxation_result_adapter_preserves_exact_parent_fields(
     assert context.routing_duals == result.routing_resource_duals
     assert context.compute_duals == result.compute_duals
     assert context.capacity_slacks == result.capacity_slacks
+    assert provider.calls == 1
+    assert provider.cache_hits == 0
+    assert provider.request_wall_seconds > 0.0
+    assert provider.cache_read_seconds == 0.0
 
 
 def test_fixed17_scores_are_deterministic_finite_and_batched(

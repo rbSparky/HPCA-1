@@ -1177,6 +1177,8 @@ class NativeExactChildEvaluator:
         self.total_evaluations = 0
         self.total_cache_hits = 0
         self.total_solve_seconds = 0.0
+        self.total_request_wall_seconds = 0.0
+        self.total_cache_read_seconds = 0.0
 
     def evaluate_children(
         self,
@@ -1187,6 +1189,7 @@ class NativeExactChildEvaluator:
         records: list[NativeChildEvaluation] = []
         scores: list[float] = []
         for action in actions:
+            request_start = time.perf_counter()
             child = state.apply_action(action)
             immediate = float(
                 sum(max(0, len(route.resource_ids) - 1) for route in action.routes)
@@ -1221,12 +1224,15 @@ class NativeExactChildEvaluator:
                     cache_hit=result.cache_hit,
                     error=result.error,
                 )
+            request_seconds = time.perf_counter() - request_start
             records.append(record)
             scores.append(record.q_rel)
+            self.total_request_wall_seconds += request_seconds
+            if record.cache_hit:
+                self.total_cache_read_seconds += request_seconds
+            else:
+                self.total_solve_seconds += float(record.solve_seconds)
         self.last_evaluations = tuple(records)
         self.total_evaluations += len(records)
         self.total_cache_hits += sum(record.cache_hit for record in records)
-        self.total_solve_seconds += sum(
-            float(record.solve_seconds) for record in records
-        )
         return tuple(scores)

@@ -550,12 +550,24 @@ def _native_search(
     if child_evaluator is not None:
         payload.update({
             "child_relaxation_seconds": child_evaluator.total_solve_seconds,
+            "child_relaxation_wall_seconds": (
+                child_evaluator.total_request_wall_seconds
+            ),
+            "child_cache_read_seconds": (
+                child_evaluator.total_cache_read_seconds
+            ),
         })
     payload["parent_relaxation_seconds"] = float(
         getattr(parent_provider, "logical_solve_seconds", 0.0)
     )
     payload["parent_canonicalization_seconds"] = float(
         getattr(parent_provider, "canonicalization_seconds", 0.0)
+    )
+    payload["parent_relaxation_wall_seconds"] = float(
+        getattr(parent_provider, "request_wall_seconds", 0.0)
+    )
+    payload["parent_cache_read_seconds"] = float(
+        getattr(parent_provider, "cache_read_seconds", 0.0)
     )
     payload["relaxation_seconds"] = (
         payload["parent_relaxation_seconds"]
