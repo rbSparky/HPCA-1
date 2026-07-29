@@ -1125,6 +1125,7 @@ def _native_failure(
     solve_seconds: float | None = None,
     placement_variables: int = 0,
     flow_variables: int = 0,
+    full_flow_variables: int = 0,
 ) -> NativeRelaxationResult:
     return NativeRelaxationResult(
         status=status,
@@ -1146,6 +1147,12 @@ def _native_failure(
         remaining_dependencies=remaining_dependencies,
         placement_variables=placement_variables,
         flow_variables=flow_variables,
+        full_flow_variables=full_flow_variables,
+        flow_edge_reduction_fraction=(
+            0.0
+            if full_flow_variables <= 0
+            else 1.0 - float(flow_variables) / float(full_flow_variables)
+        ),
         cache_key=cache_key,
         error=error,
     )

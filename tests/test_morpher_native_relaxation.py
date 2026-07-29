@@ -16,6 +16,7 @@ from flowadvantage.morpher_adapter.native_relaxation import (
     NativeExactChildEvaluator,
     NativeRelaxationConfig,
     NativeRelaxationSolver,
+    _native_failure,
 )
 
 
@@ -140,6 +141,27 @@ def test_native_relaxation_cache_repeat_is_exact(
     ).solve(problem, state)
     assert reloaded.cache_hit
     assert reloaded.objective == first.objective
+
+
+def test_solver_failure_preserves_pruned_problem_dimensions():
+    result = _native_failure(
+        "user_limit",
+        "CLARABEL",
+        0.0,
+        "failure-key",
+        10,
+        12,
+        "documented limit",
+        placement_variables=640,
+        flow_variables=2_075,
+        full_flow_variables=9_216,
+    )
+    assert not result.solved
+    assert result.flow_variables == 2_075
+    assert result.full_flow_variables == 9_216
+    assert result.flow_edge_reduction_fraction == pytest.approx(
+        1.0 - 2_075 / 9_216
+    )
 
 
 def test_reachable_edge_pruning_preserves_deep_fixed17_value(

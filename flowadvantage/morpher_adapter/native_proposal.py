@@ -23,6 +23,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import time
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
@@ -30,6 +31,17 @@ from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 import networkx as nx
 import numpy as np
 import torch
+
+# Each atomic mapping worker is already the unit of parallelism.  Constraining
+# PyTorch here prevents its intra-op pool from competing with CVXPY and other
+# queue workers.  The environment is set by the worker before this module is
+# imported; the explicit calls make the runtime contract verifiable.
+torch.set_num_threads(int(os.environ.get("TORCH_NUM_THREADS", "1")))
+try:
+    torch.set_num_interop_threads(1)
+except RuntimeError:
+    if torch.get_num_interop_threads() != 1:
+        raise
 
 from quotientflow.flow_model import ResidualGNN, StandardScaler
 
@@ -64,7 +76,7 @@ class NativeNoParentUnavailable(NotImplementedError):
     """Raised when no solver-free checkpoint is available.
 
     The frozen revision-v3 checkpoint was trained with parent dual/objective
-    inputs.  Supplying zeros or reusing parent prices would silently turn it
+    inputs. Supplying zeros or reusing parent prices would silently turn it
     into a proxy, so the real pilot must fail closed until a true no-parent
     model is trained on declared development data.
     """
