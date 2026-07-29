@@ -178,6 +178,9 @@ class NativeRelaxationSolver:
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._memory_cache: dict[str, NativeRelaxationResult] = {}
+        self.solve_calls = 0
+        self.cache_hits = 0
+        self.cache_misses = 0
 
     def solve(
         self,
@@ -186,11 +189,14 @@ class NativeRelaxationSolver:
     ) -> NativeRelaxationResult:
         if state.problem is not problem:
             raise ValueError("state belongs to a different NativeMorpherProblem")
+        self.solve_calls += 1
         key = native_relaxation_cache_key(problem, state, self.config)
         cached = self._load_cache(key)
         if cached is not None:
+            self.cache_hits += 1
             cached.cache_hit = True
             return cached
+        self.cache_misses += 1
         result = self._solve_uncached(problem, state, key)
         self._memory_cache[key] = result
         if self.cache_dir is not None:
@@ -1168,6 +1174,9 @@ class NativeExactChildEvaluator:
     def __init__(self, solver: NativeRelaxationSolver) -> None:
         self.solver = solver
         self.last_evaluations: tuple[NativeChildEvaluation, ...] = ()
+        self.total_evaluations = 0
+        self.total_cache_hits = 0
+        self.total_solve_seconds = 0.0
 
     def evaluate_children(
         self,
@@ -1215,4 +1224,9 @@ class NativeExactChildEvaluator:
             records.append(record)
             scores.append(record.q_rel)
         self.last_evaluations = tuple(records)
+        self.total_evaluations += len(records)
+        self.total_cache_hits += sum(record.cache_hit for record in records)
+        self.total_solve_seconds += sum(
+            float(record.solve_seconds) for record in records
+        )
         return tuple(scores)

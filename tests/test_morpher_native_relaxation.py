@@ -138,6 +138,9 @@ def test_native_relaxation_cache_repeat_is_exact(
     solver, first = solved_fixed17_residual
     repeated = solver.solve(problem, state)
     assert repeated.cache_hit
+    assert solver.solve_calls >= 2
+    assert solver.cache_hits >= 1
+    assert solver.cache_misses >= 1
     assert repeated.cache_key == first.cache_key
     assert repeated.objective == first.objective
     assert repeated.routing_resource_duals == first.routing_resource_duals
@@ -227,3 +230,7 @@ def test_exact_child_evaluator_produces_finite_native_action_ranking(
     assert all(record.residual_feasible for record in evaluator.last_evaluations)
     assert all(record.solve_status == "optimal" for record in evaluator.last_evaluations)
     assert all(record.residual_objective == 0.0 for record in evaluator.last_evaluations)
+    assert evaluator.total_evaluations == len(actions)
+    assert evaluator.total_cache_hits == sum(
+        record.cache_hit for record in evaluator.last_evaluations
+    )

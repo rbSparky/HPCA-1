@@ -396,6 +396,7 @@ def _native_search(
     scorer: NativeActionScorer
     timing_provider = None
     child_evaluator = None
+    parent_provider = None
     if method == "length":
         scorer = LengthActionScorer()
     else:
@@ -471,8 +472,14 @@ def _native_search(
                 "expansions": event.expansions,
                 "candidate_actions": event.generated_actions,
                 "routing_attempts": event.routed_actions + event.failed_targets,
-                "parent_solves": int(getattr(solver, "solve_count", 0)),
-                "child_solves": len(getattr(child_evaluator, "last_evaluations", ())) if child_evaluator else 0,
+                "parent_solves": int(
+                    getattr(parent_provider, "calls", 0)
+                ),
+                "child_solves": int(
+                    getattr(child_evaluator, "total_evaluations", 0)
+                ),
+                "cache_hits": int(getattr(solver, "cache_hits", 0)),
+                "cache_misses": int(getattr(solver, "cache_misses", 0)),
             }
         )
 
@@ -519,6 +526,18 @@ def _native_search(
         "feature_seconds": 0.0,
         "proposal_seconds": 0.0,
         "relaxation_seconds": 0.0,
+        "parent_solves": int(getattr(parent_provider, "calls", 0)),
+        "parent_cache_hits": int(
+            getattr(parent_provider, "cache_hits", 0)
+        ),
+        "child_solves": int(
+            getattr(child_evaluator, "total_evaluations", 0)
+        ),
+        "child_cache_hits": int(
+            getattr(child_evaluator, "total_cache_hits", 0)
+        ),
+        "relaxation_cache_hits": int(getattr(solver, "cache_hits", 0)),
+        "relaxation_cache_misses": int(getattr(solver, "cache_misses", 0)),
     }
     if timing_provider is not None and timing_provider.last_timing is not None:
         timing = timing_provider.last_timing
@@ -529,12 +548,19 @@ def _native_search(
             "gnn_action_head_seconds": timing.action_head_seconds,
         })
     if child_evaluator is not None:
-        records = child_evaluator.last_evaluations
         payload.update({
-            "child_solves": len(records),
-            "child_cache_hits": sum(bool(r.cache_hit) for r in records),
-            "child_relaxation_seconds": sum(float(r.solve_seconds) for r in records),
+            "child_relaxation_seconds": child_evaluator.total_solve_seconds,
         })
+    payload["parent_relaxation_seconds"] = float(
+        getattr(parent_provider, "logical_solve_seconds", 0.0)
+    )
+    payload["parent_canonicalization_seconds"] = float(
+        getattr(parent_provider, "canonicalization_seconds", 0.0)
+    )
+    payload["relaxation_seconds"] = (
+        payload["parent_relaxation_seconds"]
+        + float(payload.get("child_relaxation_seconds", 0.0))
+    )
     if result.mapping is not None:
         artifact_directory.mkdir(parents=True)
         atomic_json(artifact_directory / "mapping.json", result.mapping)
