@@ -136,6 +136,7 @@ class TopKExactRerankScorer:
             self.child_evaluator.evaluate_children(problem, state, selected),
             len(selected),
             component=f"{self.name}.child_evaluator",
+            permit_positive_infinity=True,
         )
         scores = [math.inf] * len(actions)
         for index, exact_score in zip(selected_indices, exact):
