@@ -28,6 +28,12 @@ FIXED17 = (
 )
 
 
+def test_native_relaxation_requires_explicit_positive_solver_threads():
+    assert NativeRelaxationConfig().max_threads == 1
+    with pytest.raises(ValueError, match="max_threads"):
+        NativeRelaxationConfig(max_threads=0)
+
+
 @pytest.fixture(scope="module")
 def fixed17_residual():
     dfg, mrrg, mapping = (

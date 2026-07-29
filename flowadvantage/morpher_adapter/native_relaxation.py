@@ -47,6 +47,7 @@ class NativeRelaxationConfig:
     extra_ii_periods: int = 1
     solver_primary: str = "CLARABEL"
     solver_fallback: str = "OSQP"
+    max_threads: int = 1
     max_solve_seconds: float = 120.0
     feasibility_tolerance: float = 1e-7
     reachable_edge_pruning: bool = True
@@ -59,6 +60,8 @@ class NativeRelaxationConfig:
             raise ValueError("extra_ii_periods must be nonnegative")
         if self.max_solve_seconds <= 0:
             raise ValueError("max_solve_seconds must be positive")
+        if self.max_threads <= 0:
+            raise ValueError("max_threads must be positive")
 
 
 @dataclass
@@ -916,6 +919,7 @@ class NativeRelaxationSolver:
                     kwargs.update(
                         {
                             "time_limit": self.config.max_solve_seconds,
+                            "max_threads": self.config.max_threads,
                             "tol_gap_abs": self.config.feasibility_tolerance,
                             "tol_feas": self.config.feasibility_tolerance,
                         }
