@@ -15,6 +15,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 for _name in (
     "OMP_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",
@@ -43,7 +48,6 @@ from scripts.v5b_pilot_queue_common import (
     work_id,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "results/revision_v5b/pilot_queue"
 THREAD_ENVIRONMENTS = (
     "OMP_NUM_THREADS",
