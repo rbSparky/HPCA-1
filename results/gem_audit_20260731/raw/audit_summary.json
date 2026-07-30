@@ -1,0 +1,68 @@
+{
+  "best_available_length_pairs": 13,
+  "checkpoint_hashes": [
+    "468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8"
+  ],
+  "flow_architectures": [
+    "A0_hycube4x4",
+    "A1_stdnoc4x4",
+    "A2_hycube4x4_mem_variant",
+    "A3_hycube8x8"
+  ],
+  "flow_kernels": [
+    "array_add",
+    "array_cond",
+    "fix_fft",
+    "hpcg",
+    "trmm"
+  ],
+  "flow_pair_identities": 11,
+  "flow_status_counts": {
+    "DONE": 11,
+    "TIMEOUT": 3,
+    "VALID_MAPPING_FAILURE": 19
+  },
+  "paired_summaries": [
+    {
+      "common_success_instances": 3,
+      "interpretation": "extended-budget diagnostic; 7200 s Flow watchdog versus heterogeneous length retries",
+      "length_successes": 3,
+      "matched_budget": false,
+      "mean_common_success_route_cost_delta_fraction": 0.0,
+      "method": "dual_linear",
+      "method_successes": 4,
+      "paired_normal_instances": 10,
+      "success_delta_ci_high_points": 30.0,
+      "success_delta_ci_low_points": 0.0,
+      "success_delta_points": 10.0
+    },
+    {
+      "common_success_instances": 3,
+      "interpretation": "extended-budget diagnostic; 7200 s Flow watchdog versus heterogeneous length retries",
+      "length_successes": 3,
+      "matched_budget": false,
+      "mean_common_success_route_cost_delta_fraction": 0.02314814814814815,
+      "method": "flow_proposal",
+      "method_successes": 3,
+      "paired_normal_instances": 10,
+      "success_delta_ci_high_points": 0.0,
+      "success_delta_ci_low_points": 0.0,
+      "success_delta_points": 0.0
+    },
+    {
+      "common_success_instances": 3,
+      "interpretation": "extended-budget diagnostic; 7200 s Flow watchdog versus heterogeneous length retries",
+      "length_successes": 3,
+      "matched_budget": false,
+      "mean_common_success_route_cost_delta_fraction": 0.0,
+      "method": "flow_top4",
+      "method_successes": 4,
+      "paired_normal_instances": 10,
+      "success_delta_ci_high_points": 30.0,
+      "success_delta_ci_low_points": 0.0,
+      "success_delta_points": 10.0
+    }
+  ],
+  "paper_readiness_percent": 26.0,
+  "source_commit": "126b804104b3e5ce45b2cdda5ab5cdd3932f1805"
+}
