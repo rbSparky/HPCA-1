@@ -14,9 +14,12 @@ import csv
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 KERNELS = ("array_add", "array_cond", "gemm_nt", "fix_fft", "hpcg", "trmm")
 ARCHES_CORE = ("A0_hycube4x4", "A1_stdnoc4x4", "A2_hycube4x4_mem_variant")
 ARCHES_ALL = ARCHES_CORE + ("A3_hycube8x8",)
@@ -126,6 +129,7 @@ def main() -> int:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--include-a3", action="store_true")
+    parser.add_argument("--kernels", default=",".join(KERNELS), help="comma-separated frozen kernel subset")
     parser.add_argument("--delta", type=int)
     parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
@@ -136,9 +140,12 @@ def main() -> int:
         raise SystemExit(f"refusing to overwrite non-empty output: {output}")
     output.mkdir(parents=True, exist_ok=True)
     source_hash = source_tree_hash(ROOT)
+    selected_kernels = tuple(value.strip() for value in args.kernels.split(",") if value.strip())
+    if any(value not in KERNELS for value in selected_kernels):
+        raise SystemExit(f"unknown kernel in --kernels: {selected_kernels}")
     arches = ARCHES_ALL if args.include_a3 else ARCHES_CORE
     jobs: list[dict[str, object]] = []
-    for kernel in KERNELS:
+    for kernel in selected_kernels:
         native_dfg = native_root / "dfg" / f"{kernel}.xml"
         for architecture in arches:
             pair = problem_root / kernel / architecture
@@ -160,8 +167,8 @@ def main() -> int:
             if args.delta is None and not args.native_only:
                 for method in METHODS_FLOW:
                     ii = lower_bound
-                    dfg = pair / f"ii{ii}" / "dfg.json"
-                    mrrg = pair / f"ii{ii}" / "mrrg.json"
+                    dfg = pair / "ii0" / "dfg.json"
+                    mrrg = pair / "ii0" / "mrrg.json"
                     row = row_base(
                         kernel=kernel, architecture=architecture, method=method,
                         seed=0, budget=600, timeout=600, dfg=Path(remote_problem(ii)) / "dfg.json",
