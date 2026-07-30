@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -138,12 +139,14 @@ def test_beam_mapper_is_bitwise_deterministic_on_fixed17_partial(fixed17):
         per_state_action_limit=4,
         max_expansions=20,
     )
-    first = DeterministicNativeBeamMapper(
+    first_mapper = DeterministicNativeBeamMapper(
         problem, scorer=LengthActionScorer(), config=config
-    ).map(partial)
-    second = DeterministicNativeBeamMapper(
+    )
+    first = first_mapper.map(partial)
+    second_mapper = DeterministicNativeBeamMapper(
         problem, scorer=LengthActionScorer(), config=config
-    ).map(partial)
+    )
+    second = second_mapper.map(partial)
     assert first.metrics.success == second.metrics.success
     assert first.state.stable_key() == second.state.stable_key()
     assert first.mapping == second.mapping
@@ -151,6 +154,8 @@ def test_beam_mapper_is_bitwise_deterministic_on_fixed17_partial(fixed17):
     assert first.metrics.route_cost == second.metrics.route_cost
     assert first.metrics.expansions == second.metrics.expansions
     assert first.metrics.generated_actions == second.metrics.generated_actions
+    assert first_mapper.action_universe_hash == second_mapper.action_universe_hash
+    assert first_mapper.action_universe_hash != hashlib.sha256().hexdigest()
 
 
 def test_deterministic_length_prefix_is_empty_state_and_witness_independent(fixed17):

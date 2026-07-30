@@ -37,7 +37,7 @@
  	// by Yujie
 --- a/src/CGRA_xml_compiler.cpp
 +++ b/src/CGRA_xml_compiler.cpp
-@@ -127,6 +127,34 @@
+@@ -127,6 +127,30 @@
  	// exit(EXIT_SUCCESS);
  
  	auto start = chrono::steady_clock::now();
@@ -45,17 +45,13 @@
 +	// successful mapping. Reconstructing the MRRG from architecture JSON would
 +	// omit native expansion and mapper-side memory-address semantics.
 +	if (!args.dump_flowadvantage_problem.empty()) {
-+		if (initUserII <= 0) {
-+			std::cerr << "FlowAdvantage problem export requires explicit positive -i\n";
-+			return 3;
-+		}
 +		DFG externalDFG;
 +		externalDFG.parseXML(inputDFG_filename);
 +		CGRA *externalCGRA;
 +		if (json_file_name.empty())
-+			externalCGRA = new CGRA(NULL, "coreCGRA", initUserII, ydim, xdim, &externalDFG, PEType, numberOfDPs, mapper->getcongestedPortsPtr());
++			externalCGRA = new CGRA(NULL, "coreCGRA", II, ydim, xdim, &externalDFG, PEType, numberOfDPs, mapper->getcongestedPortsPtr());
 +		else
-+			externalCGRA = new CGRA(json_file_name, initUserII, xdim, ydim, mapper->getcongestedPortsPtr());
++			externalCGRA = new CGRA(json_file_name, II, xdim, ydim, mapper->getcongestedPortsPtr());
 +		externalCGRA->max_hops = args.max_hops;
 +		mapper->cgra = externalCGRA;
 +		mapper->dfg = &externalDFG;
@@ -65,7 +61,7 @@
 +		);
 +		std::cout << "FlowAdvantage problem export "
 +			<< (exported ? "PASS" : "FAIL") << " to "
-+			<< args.dump_flowadvantage_problem << "\n";
++			<< args.dump_flowadvantage_problem << " at II " << II << "\n";
 +		delete externalCGRA;
 +		return exported ? 0 : 5;
 +	}
@@ -83,7 +79,7 @@
  	fa_mkdir(directory);
  	json dfgj, mrrgj, mapj;
  	dfgj["schema"] = "flowadvantage_morpher_dfg_v1";
-@@ -1527,7 +1527,16 @@
+@@ -1527,7 +1527,28 @@
  		rr["end_time"] = goal->getLat(); rr["export_status"]="ok"; mapj["routes"].push_back(rr);
  	}
  	dfgj["metadata"]["native_source"] = "DFG::nodeList"; mrrgj["metadata"]["native_source"] = "CGRA::subModules/getconnectedTo"; mapj["metadata"]["native_source"] = "DataPath::mappedNode + DFGNode::routingPorts";
@@ -96,6 +92,18 @@
 +		ofstream c(directory + "/mapping.json");
 +		if (!c) return false;
 +		c << setw(2) << mapj << endl;
++	} else {
++		json manifest;
++		manifest["schema"] = "flowadvantage_morpher_problem_manifest_v1";
++		manifest["toolchain_commit"] = "9a9dce7aea521f1d5ef33686f57ca84864edb3c9";
++		manifest["ii"] = get_t_max();
++		manifest["architecture_hash"] = mrrgj["architecture_hash"];
++		manifest["dfg_hash"] = dfgj["dfg_hash"];
++		manifest["dfg_schema"] = dfgj["schema"];
++		manifest["mrrg_schema"] = mrrgj["schema"];
++		ofstream c(directory + "/problem_manifest.json");
++		if (!c) return false;
++		c << setw(2) << manifest << endl;
 +	}
 +	return true;
  }

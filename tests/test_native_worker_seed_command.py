@@ -16,3 +16,11 @@ def test_pathfinder_does_not_require_entropy_seed():
     block = source[source.index("is_sa ="):source.index("progress[\"stage\"]")]
     assert "if is_sa:" in block
     assert "random_device" not in block
+
+
+def test_native_worker_freezes_the_inclusive_ii_grid():
+    source = Path("scripts/run_v5b_pilot_worker.py").read_text()
+    block = source[source.index("command = ["):source.index("progress[\"stage\"]")]
+    assert '"--max_II"' in block
+    # Morpher stops before max_II, so LB..LB+4 uses an exclusive LB+5 bound.
+    assert 'int(spec.get("ii_delta_max", 4)) + 1' in block

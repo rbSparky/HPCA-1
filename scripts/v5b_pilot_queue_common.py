@@ -69,10 +69,14 @@ MANIFEST_FIELDS = (
     "mapper_binary",
     "dfg_path",
     "architecture_path",
+    "native_dfg_path",
+    "native_architecture_path",
     "reference_mapping_path",
     "x",
     "y",
     "initial_ii",
+    "ii_delta_max",
+    "max_ii",
     "pe_type",
     "native_method",
     "native_max_iter",
@@ -90,6 +94,9 @@ MANIFEST_FIELDS = (
     "toolchain_hash",
     "dfg_hash",
     "architecture_hash",
+    "native_dfg_hash",
+    "native_architecture_hash",
+    "paper_strict_legality",
     "reference_mapping_hash",
     "checkpoint_hash",
     "checkpoint_path",
@@ -112,10 +119,14 @@ SEMANTIC_FIELDS = (
     "mapper_binary",
     "dfg_path",
     "architecture_path",
+    "native_dfg_path",
+    "native_architecture_path",
     "reference_mapping_path",
     "x",
     "y",
     "initial_ii",
+    "ii_delta_max",
+    "max_ii",
     "pe_type",
     "native_method",
     "native_max_iter",
@@ -132,6 +143,9 @@ SEMANTIC_FIELDS = (
     "toolchain_hash",
     "dfg_hash",
     "architecture_hash",
+    "native_dfg_hash",
+    "native_architecture_hash",
+    "paper_strict_legality",
     "reference_mapping_hash",
     "checkpoint_hash",
     "checkpoint_path",
@@ -151,6 +165,8 @@ _SEMANTIC_INTEGER_FIELDS = frozenset(
         "x",
         "y",
         "initial_ii",
+        "ii_delta_max",
+        "max_ii",
         "native_method",
         "native_max_iter",
         "beam_width",
@@ -168,7 +184,7 @@ _SEMANTIC_FLOAT_FIELDS = frozenset(
     }
 )
 _SEMANTIC_BOOLEAN_FIELDS = frozenset(
-    {"full_end_to_end", "reachable_edge_pruning"}
+    {"full_end_to_end", "reachable_edge_pruning", "paper_strict_legality"}
 )
 
 
@@ -267,6 +283,28 @@ def atomic_json(path: Path, value: Any) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(value, handle, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+        fsync_directory(path.parent)
+    except BaseException:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def atomic_text(path: Path, value: str) -> None:
+    """Durably publish UTF-8 text without exposing a partial file."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(value)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import time
 from dataclasses import asdict, dataclass, field
@@ -283,6 +284,13 @@ class DeterministicNativeBeamMapper:
         self.config = config or NativeBeamConfig()
         self.progress_callback = progress_callback
         self.cancel_check = cancel_check
+        self._action_universe_hasher = hashlib.sha256()
+
+    @property
+    def action_universe_hash(self) -> str:
+        """Hash every pre-scoring action group in deterministic visit order."""
+
+        return self._action_universe_hasher.hexdigest()
 
     def _emit(
         self,
@@ -325,6 +333,7 @@ class DeterministicNativeBeamMapper:
         initial_frontier: Sequence[tuple[float, tuple[Any, ...], NativeMappingState]] | None = None,
     ) -> NativeBeamResult:
         start = time.monotonic()
+        self._action_universe_hasher = hashlib.sha256()
         if initial_state is not None and initial_frontier is not None:
             raise ValueError("initial_state and initial_frontier are mutually exclusive")
         if initial_frontier is not None and not initial_frontier:
@@ -442,6 +451,13 @@ class DeterministicNativeBeamMapper:
                 counters["generated_actions"] += len(actions)
                 if not actions:
                     continue
+                universe_record = repr(
+                    (parent.stable_key(), tuple(action.stable_key() for action in actions))
+                ).encode("utf-8")
+                self._action_universe_hasher.update(
+                    len(universe_record).to_bytes(8, "big")
+                )
+                self._action_universe_hasher.update(universe_record)
                 scoring_started = time.perf_counter()
                 try:
                     scores = _checked_scores(

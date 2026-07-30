@@ -252,6 +252,15 @@ def test_exact_child_evaluator_produces_finite_native_action_ranking(
     assert len(set(scores)) == 2
     assert scores == tuple(record.q_rel for record in evaluator.last_evaluations)
     assert all(record.residual_feasible for record in evaluator.last_evaluations)
+    assert all(record.solve_status == "optimal" for record in evaluator.last_evaluations)
+    assert all(record.residual_objective == 0.0 for record in evaluator.last_evaluations)
+    assert evaluator.total_evaluations == len(actions)
+    assert evaluator.total_cache_hits == sum(
+        record.cache_hit for record in evaluator.last_evaluations
+    )
+    assert evaluator.total_request_wall_seconds > 0.0
+    assert evaluator.total_cache_read_seconds >= 0.0
+    assert evaluator.total_solve_seconds >= 0.0
 
 
 def test_parallel_child_evaluation_preserves_scores_and_order(
@@ -293,12 +302,3 @@ def test_parallel_child_evaluation_preserves_scores_and_order(
     ]
     assert parallel.total_batch_wall_seconds > 0.0
     assert parallel.total_request_wall_seconds > 0.0
-    assert all(record.solve_status == "optimal" for record in evaluator.last_evaluations)
-    assert all(record.residual_objective == 0.0 for record in evaluator.last_evaluations)
-    assert evaluator.total_evaluations == len(actions)
-    assert evaluator.total_cache_hits == sum(
-        record.cache_hit for record in evaluator.last_evaluations
-    )
-    assert evaluator.total_request_wall_seconds > 0.0
-    assert evaluator.total_cache_read_seconds >= 0.0
-    assert evaluator.total_solve_seconds >= 0.0

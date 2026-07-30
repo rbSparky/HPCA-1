@@ -121,6 +121,24 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
         sha256_file(dfg),
         sha256_file(architecture),
     )
+    native_dfg_value = row.get("native_dfg_path")
+    native_architecture_value = row.get("native_architecture_path")
+    if bool(native_dfg_value) != bool(native_architecture_value):
+        raise ValueError(
+            "native_dfg_path and native_architecture_path must be supplied together"
+        )
+    if native_dfg_value:
+        native_dfg = Path(native_dfg_value).expanduser().resolve()
+        native_architecture = Path(native_architecture_value).expanduser().resolve()
+        if not native_dfg.is_file() or not native_architecture.is_file():
+            raise FileNotFoundError(
+                "missing native reimport inputs: "
+                f"dfg={native_dfg}, architecture={native_architecture}"
+            )
+        row["native_dfg_path"] = str(native_dfg)
+        row["native_architecture_path"] = str(native_architecture)
+        row["native_dfg_hash"] = sha256_file(native_dfg)
+        row["native_architecture_hash"] = sha256_file(native_architecture)
     if row.get("reference_mapping_path"):
         witness = Path(row["reference_mapping_path"]).expanduser().resolve()
         if not witness.is_file():
@@ -166,14 +184,22 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
                 "witness anchor_operations is prohibited by the paper protocol"
             )
     row["reachable_edge_pruning"] = row.get("reachable_edge_pruning", True)
-    if row["method"] in {
+    native_methods = {
         "native_pathfinder",
         "pathfinder",
         "native_simulated_annealing",
         "simulated_annealing",
         "native_lisa",
         "lisa",
-    }:
+    }
+    paper_flow_methods = {
+        "length",
+        "dual_linear",
+        "flow_proposal",
+        "flow_top4",
+        "full_relaxed_lookahead",
+    }
+    if row["method"] in native_methods or native_dfg_value:
         mapper = _mapper_path(row)
         if not mapper.is_file():
             raise FileNotFoundError(f"native mapper binary not found: {mapper}")
@@ -181,6 +207,15 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
         row["toolchain_hash"] = sha256_file(mapper)
     else:
         row["toolchain_hash"] = row.get("toolchain_hash", "")
+    if row["method"] in paper_flow_methods and row.get("paper_strict_legality"):
+        if not native_dfg_value:
+            raise ValueError(
+                "paper_strict_legality Flow jobs require native DFG/architecture inputs"
+            )
+        if not row.get("mapper_binary"):
+            raise ValueError(
+                "paper_strict_legality Flow jobs require a native mapper binary"
+            )
     for field, default in (
         ("beam_width", 4),
         ("k_paths", 4),
@@ -316,6 +351,40 @@ def _kill_process_tree(process: subprocess.Popen[Any], stderr_path: Path) -> Non
             pass
 
 
+def _publish_operational_result(
+    row: dict[str, Any], result_path: Path
+) -> None:
+    """Publish terminal infrastructure evidence when the child cannot do so."""
+
+    if result_path.exists():
+        return
+    payload = {
+        "schema": "flowadvantage_v5b_pilot_result_v1",
+        "work_id": row["work_id"],
+        "kernel": row["kernel"],
+        "architecture": row["architecture"],
+        "method": row["method"],
+        "seed": int(row["seed"]),
+        "status": row["status"],
+        "success": None,
+        "legal": False,
+        "config_hash": row["config_hash"],
+        "source_commit": row.get("source_commit", ""),
+        "source_tree_hash": row.get("source_tree_hash", ""),
+        "toolchain_hash": row.get("toolchain_hash", ""),
+        "dfg_hash": row.get("dfg_hash", ""),
+        "architecture_hash": row.get("architecture_hash", ""),
+        "checkpoint_hash": row.get("checkpoint_hash", ""),
+        "error_type": row.get("error_type", ""),
+        "error_message": row.get("error_message", ""),
+        "compile_wall_seconds": float(row.get("wall_seconds") or 0.0),
+        "cpu_seconds": float(row.get("cpu_seconds") or 0.0),
+        "peak_rss_mb": float(row.get("peak_rss_mb") or 0.0),
+        "finished_at": float(row.get("end_time") or time.time()),
+    }
+    atomic_json(result_path, payload)
+
+
 def _run_one(
     row: dict[str, Any],
     output: Path,
@@ -420,6 +489,7 @@ def _run_one(
         row["error_message"] = (
             f"process tree terminated after {row['timeout_seconds']} seconds"
         )
+        _publish_operational_result(row, result_path)
     elif result_path.is_file():
         payload = json.loads(result_path.read_text(encoding="utf-8"))
         if payload.get("work_id") != row["work_id"]:
@@ -442,6 +512,7 @@ def _run_one(
         row["status"] = "ERROR"
         row["error_type"] = "NoAtomicResult"
         row["error_message"] = "worker exited without publishing a result"
+        _publish_operational_result(row, result_path)
     return row
 
 
@@ -527,6 +598,9 @@ def main() -> int:
                 work_item["error_type"] = type(error).__name__
                 work_item["error_message"] = str(error)
                 work_item["end_time"] = time.time()
+                _publish_operational_result(
+                    work_item, Path(work_item["result_path"])
+                )
                 publish(work_item)
     counts: dict[str, int] = {}
     for row in rows:

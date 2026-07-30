@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import faulthandler
+import hashlib
 import json
 import math
 import os
@@ -39,6 +40,7 @@ import psutil
 
 from scripts.v5b_pilot_queue_common import (
     atomic_json,
+    atomic_text,
     config_hash,
     fsync_directory,
     sha256_file,
@@ -152,9 +154,30 @@ def _preflight(spec: dict[str, Any]) -> tuple[Path | None, Path, Path]:
         raise ValueError("DFG hash changed after manifest freeze")
     if sha256_file(architecture) != spec["architecture_hash"]:
         raise ValueError("architecture hash changed after manifest freeze")
-    mapper = _resolve_mapper(spec) if method in PATHFINDER_METHODS else None
+    strict_native_legality = _optional_bool(
+        spec.get("paper_strict_legality"), False
+    )
+    mapper = (
+        _resolve_mapper(spec)
+        if method in PATHFINDER_METHODS or strict_native_legality
+        else None
+    )
     if mapper is not None and sha256_file(mapper) != spec["toolchain_hash"]:
         raise ValueError("native mapper binary hash changed after manifest freeze")
+    if strict_native_legality:
+        for kind, path_field, hash_field in (
+            ("native DFG", "native_dfg_path", "native_dfg_hash"),
+            (
+                "native architecture",
+                "native_architecture_path",
+                "native_architecture_hash",
+            ),
+        ):
+            path = Path(str(spec.get(path_field, ""))).resolve()
+            if not path.is_file():
+                raise FileNotFoundError(f"{kind} input does not exist: {path}")
+            if sha256_file(path) != spec.get(hash_field):
+                raise ValueError(f"{kind} hash changed after manifest freeze")
     if config_hash(spec) != spec["config_hash"]:
         raise ValueError("semantic work-item configuration hash mismatch")
     if source_tree_hash(ROOT) != spec["source_tree_hash"]:
@@ -213,6 +236,13 @@ def _native_pathfinder(
         "1" if is_sa else str(spec.get("native_method", 0)),
         "-r",
         str(int(spec.get("native_max_iter", 30))),
+        "--max_II",
+        str(
+            int(
+                spec.get("max_ii")
+                or (int(spec["initial_ii"]) + int(spec.get("ii_delta_max", 4)) + 1)
+            )
+        ),
         "--dump-flowadvantage-state",
         str(export),
     ]
@@ -317,6 +347,8 @@ def _native_pathfinder(
     return {
         "status": "DONE",
         "legal": True,
+        "flowadvantage_legality": True,
+        "morpher_legality": True,
         "success": True,
         "termination": "DONE",
         "ii": success_ii,
@@ -335,8 +367,115 @@ def _native_pathfinder(
     }
 
 
+def _semantic_mapping_projection(mapping: dict[str, Any]) -> dict[str, Any]:
+    """Return the native-contract fields that must survive a reimport."""
+
+    operations = sorted(
+        (
+            str(item.get("native_node_key", item["dfg_node_id"])),
+            str(item["pe_id"]),
+            str(item["fu_id"]),
+            int(item["modulo_time"]),
+        )
+        for item in mapping.get("operations", [])
+    )
+    routes = sorted(
+        (
+            str(item["edge_id"]),
+            tuple(str(value) for value in item.get("ordered_resource_ids", [])),
+            tuple(str(value) for value in item.get("ordered_link_ids", [])),
+            int(item["start_time"]),
+            int(item["end_time"]),
+        )
+        for item in mapping.get("routes", [])
+    )
+    return {"ii": int(mapping["ii"]), "operations": operations, "routes": routes}
+
+
+def _native_reimport_validate(
+    spec: dict[str, Any],
+    mapper: Path,
+    mapping_path: Path,
+    artifact_directory: Path,
+) -> dict[str, Any]:
+    """Invoke Morpher's importer/checker and require semantic round-trip equality."""
+
+    native_dfg = Path(spec["native_dfg_path"]).resolve()
+    native_architecture = Path(spec["native_architecture_path"]).resolve()
+    reimport_root = artifact_directory / "native_reimport"
+    export = reimport_root / "export"
+    if reimport_root.exists():
+        raise FileExistsError(f"native reimport output already exists: {reimport_root}")
+    export.mkdir(parents=True)
+    command = [
+        str(mapper),
+        "-d",
+        str(native_dfg),
+        "-x",
+        str(int(spec["x"])),
+        "-y",
+        str(int(spec["y"])),
+        "-j",
+        str(native_architecture),
+        "-i",
+        str(int(json.loads(mapping_path.read_text(encoding="utf-8"))["ii"])),
+        "-t",
+        str(spec["pe_type"]),
+        "-m",
+        "0",
+        "--load-flowadvantage-mapping",
+        str(mapping_path.resolve()),
+        "--dump-flowadvantage-state",
+        str(export.resolve()),
+    ]
+    started = time.monotonic()
+    process = subprocess.run(
+        command,
+        cwd=reimport_root,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    elapsed = time.monotonic() - started
+    atomic_text(reimport_root / "stdout.log", process.stdout)
+    atomic_text(reimport_root / "stderr.log", process.stderr)
+    if process.returncode != 0:
+        raise RuntimeError(
+            "native Morpher reimport failed with exit code "
+            f"{process.returncode}: {process.stdout[-1000:]} {process.stderr[-1000:]}"
+        )
+    if "FlowAdvantage native legality PASS" not in process.stdout:
+        raise RuntimeError("native Morpher reimport omitted legality PASS marker")
+    roundtrip_path = export / "mapping.json"
+    if not roundtrip_path.is_file():
+        raise RuntimeError("native Morpher reimport omitted round-trip mapping.json")
+    before = json.loads(mapping_path.read_text(encoding="utf-8"))
+    after = json.loads(roundtrip_path.read_text(encoding="utf-8"))
+    projection_before = _semantic_mapping_projection(before)
+    projection_after = _semantic_mapping_projection(after)
+    comparison = {
+        "schema": "flowadvantage_native_reimport_validation_v1",
+        "native_legality": True,
+        "semantic_roundtrip_match": projection_before == projection_after,
+        "ii_match": projection_before["ii"] == projection_after["ii"],
+        "placement_match": projection_before["operations"] == projection_after["operations"],
+        "route_match": projection_before["routes"] == projection_after["routes"],
+        "wall_seconds": elapsed,
+        "command": command,
+        "roundtrip_mapping_hash": sha256_file(roundtrip_path),
+    }
+    atomic_json(reimport_root / "validation.json", comparison)
+    if not comparison["semantic_roundtrip_match"]:
+        raise RuntimeError(
+            "native Morpher reimport changed placement, route, or II semantics"
+        )
+    return comparison
+
+
 def _native_search(
     spec: dict[str, Any],
+    mapper_binary: Path | None,
     dfg_path: Path,
     architecture_path: Path,
     artifact_directory: Path,
@@ -636,6 +775,10 @@ def _native_search(
         "scorer_rejected_states": result.metrics.scorer_rejected_states,
         "scorer_rejection_reasons": result.metrics.scorer_rejection_reasons,
         "stage_seconds": combined_stage_seconds,
+        "prefix_action_universe_hash": (
+            prefix_mapper.action_universe_hash if prefix_depth else ""
+        ),
+        "completion_action_universe_hash": mapper.action_universe_hash,
         "parent_solves": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(
             getattr(parent_provider, "cache_hits", 0)
@@ -655,6 +798,15 @@ def _native_search(
             getattr(solver, "structure_cache_misses", 0)
         ),
     }
+    action_hash = hashlib.sha256()
+    for component in (
+        payload["prefix_action_universe_hash"],
+        payload["completion_action_universe_hash"],
+    ):
+        encoded = component.encode("ascii")
+        action_hash.update(len(encoded).to_bytes(8, "big"))
+        action_hash.update(encoded)
+    payload["action_universe_hash"] = action_hash.hexdigest()
     if timing_provider is not None and timing_provider.last_timing is not None:
         timing = timing_provider.last_timing
         payload.update({
@@ -708,8 +860,30 @@ def _native_search(
                 + json.dumps(legality.get("violations", [])[:5], sort_keys=True)
             )
         atomic_json(artifact_directory / "legality.json", legality)
+        payload["flowadvantage_legality"] = True
         payload["artifact_directory"] = str(artifact_directory)
         payload["mapping_hash"] = sha256_file(artifact_directory / "mapping.json")
+        if _optional_bool(spec.get("paper_strict_legality"), False):
+            if mapper_binary is None:
+                raise RuntimeError(
+                    "strict paper legality requested without native mapper binary"
+                )
+            progress["stage"] = "native_reimport_legality"
+            native_validation = _native_reimport_validate(
+                spec,
+                mapper_binary,
+                artifact_directory / "mapping.json",
+                artifact_directory,
+            )
+            payload["morpher_legality"] = bool(
+                native_validation["native_legality"]
+                and native_validation["semantic_roundtrip_match"]
+            )
+            payload["native_reimport_seconds"] = float(
+                native_validation["wall_seconds"]
+            )
+        else:
+            payload["morpher_legality"] = False
     return payload
 
 
@@ -760,6 +934,22 @@ def main() -> int:
     faulthandler.register(signal.SIGUSR1, all_threads=True)
     thread = threading.Thread(target=heartbeat, daemon=True)
     thread.start()
+    identity = {
+        "schema": "flowadvantage_v5b_pilot_result_v1",
+        "work_id": spec.get("work_id"),
+        "kernel": spec.get("kernel"),
+        "architecture": spec.get("architecture"),
+        "method": spec.get("method"),
+        "seed": int(spec.get("seed") or 0),
+        "config_hash": spec.get("config_hash"),
+        "source_commit": spec.get("source_commit", ""),
+        "source_tree_hash": spec.get("source_tree_hash", ""),
+        "toolchain_hash": spec.get("toolchain_hash", ""),
+        "dfg_hash": spec.get("dfg_hash", ""),
+        "architecture_hash": spec.get("architecture_hash", ""),
+        "checkpoint_hash": spec.get("checkpoint_hash", ""),
+        "started_at": started_wall,
+    }
     try:
         mapper, dfg, architecture = _preflight(spec)
         if result_path.exists():
@@ -775,7 +965,7 @@ def main() -> int:
             )
         else:
             row = _native_search(
-                spec, dfg, architecture, artifact_directory, progress
+                spec, mapper, dfg, architecture, artifact_directory, progress
             )
         row.update(
             {
@@ -787,6 +977,7 @@ def main() -> int:
                 "seed": int(spec["seed"]),
                 "config_hash": spec["config_hash"],
                 "source_commit": spec["source_commit"],
+                "source_tree_hash": spec["source_tree_hash"],
                 "toolchain_hash": spec["toolchain_hash"],
                 "dfg_hash": spec["dfg_hash"],
                 "architecture_hash": spec["architecture_hash"],
@@ -803,12 +994,11 @@ def main() -> int:
         atomic_json(
             result_path,
             {
-                "schema": "flowadvantage_v5b_pilot_result_v1",
-                "work_id": spec["work_id"],
+                **identity,
                 "status": "UNSUPPORTED",
                 "error_type": type(error).__name__,
                 "error_message": str(error),
-                "config_hash": spec.get("config_hash"),
+                "finished_at": time.time(),
             },
         )
         return 3
@@ -822,8 +1012,7 @@ def main() -> int:
             atomic_json(
                 result_path,
                 {
-                    "schema": "flowadvantage_v5b_pilot_result_v1",
-                    "work_id": spec.get("work_id"),
+                    **identity,
                     "status": "VALID_MAPPING_FAILURE",
                     "success": False,
                     "legal": False,
@@ -831,19 +1020,18 @@ def main() -> int:
                     "failure_stage": "initialization",
                     "error_type": "ValidMappingFailure",
                     "error_message": message,
-                    "config_hash": spec.get("config_hash"),
+                    "finished_at": time.time(),
                 },
             )
             return 0
         atomic_json(
             result_path,
             {
-                "schema": "flowadvantage_v5b_pilot_result_v1",
-                "work_id": spec.get("work_id"),
+                **identity,
                 "status": "ERROR",
                 "error_type": type(error).__name__,
                 "error_message": message,
-                "config_hash": spec.get("config_hash"),
+                "finished_at": time.time(),
             },
         )
         raise
@@ -851,12 +1039,11 @@ def main() -> int:
         atomic_json(
             result_path,
             {
-                "schema": "flowadvantage_v5b_pilot_result_v1",
-                "work_id": spec.get("work_id"),
+                **identity,
                 "status": "ERROR",
                 "error_type": type(error).__name__,
                 "error_message": str(error),
-                "config_hash": spec.get("config_hash"),
+                "finished_at": time.time(),
             },
         )
         raise
