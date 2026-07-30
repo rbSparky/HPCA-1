@@ -1,0 +1,103 @@
+revision:
+  iteration: 1
+  target_score: 6
+  predicted_verified_score: 3
+  predicted_label: "Weak reject"
+  compilation: PASS
+  venue_compliance: PAPER_FORMAT_PASS_EVIDENCE_PENDING
+  anonymity: PASS
+  content_pages: 9
+  unresolved_p0: 2
+  unresolved_p1: 5
+  unresolved_draft_values: 0
+  issues:
+    - review_id: R1
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+        - "AUTHOR_ACTIONS.md"
+      manuscript_locations:
+        - "Abstract"
+        - "Sections VI-VIII"
+      resolution: "Narrowed all mapping-quality claims and specified a zero-prefix paired evaluation with explicit status accounting and success-under-budget metrics."
+      validation: "Source and rendered-PDF claim audit; no new paired experiments were available."
+    - review_id: R2
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+        - "AUTHOR_ACTIONS.md"
+      manuscript_locations:
+        - "Sections VII-C/D and VIII-C"
+      resolution: "Made the measured relaxation bottleneck explicit and specified matrix reuse, warm starts, batching, embedding reuse, stage-level profiling, and top-k Pareto evaluation."
+      validation: "Existing probe values preserved; no new implementation or timing data were supplied."
+    - review_id: R3
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+      manuscript_locations:
+        - "Section V-B"
+        - "Strict native probe"
+      resolution: "Reclassified the 40% experiment as suffix completion and made zero prefix mandatory for headline deterministic comparisons."
+      validation: "All current-result descriptions and conclusions were checked for causal consistency."
+    - review_id: R4
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+        - "AUTHOR_ACTIONS.md"
+      manuscript_locations:
+        - "Section VI-D"
+      resolution: "Added a complete leakage-safe split, training-configuration, ranking-metric, and ablation disclosure contract."
+      validation: "No training logs, checkpoints, split manifests, or missing configuration values were present in the source archive."
+    - review_id: R5
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+      manuscript_locations:
+        - "Sections II-C, III-A/B, VI-D, VIII-A"
+      resolution: "Replaced categorical scarcity and stability claims with local solver-dependent approximation language; added multiplier nonuniqueness and required knockout/tau/solver/tolerance validation."
+      validation: "Mathematical wording audit; no new dual-stability experiments were available."
+    - review_id: R6
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+        - "AUTHOR_ACTIONS.md"
+      manuscript_locations:
+        - "Section IV-E"
+      resolution: "Restricted admissible DFG transforms to preserve the complete total order and required legal-action, successor, score, and terminal equivariance; distinguished exhaustive exactness from finite-beam dominance reduction."
+      validation: "Specification-level proof argument added; exhaustive implementation equivalence tests remain outstanding."
+    - review_id: R7
+      status: PARTIAL
+      files_changed:
+        - "main.tex"
+        - "refs.bib"
+      manuscript_locations:
+        - "Related Work"
+      resolution: "Added the ICCAD 2022 GNN/RL mapper, Rewire, learning-to-strong-branch, and symmetry-reduction comparisons; narrowed novelty to the residual-dual/native-action decomposition."
+      validation: "Citation metadata verified against primary publisher/author or proceedings sources; no common-contract baseline was run."
+    - review_id: R8
+      status: RESOLVED
+      files_changed:
+        - "main.tex"
+        - "README.md"
+        - "DRAFT_VALUE_LEDGER.csv"
+      manuscript_locations:
+        - "Title banner"
+        - "Figures 1-2"
+        - "Appendix A"
+      resolution: "Removed all visible figure draft boxes and #XXX text, added completed conceptual figures, preserved anonymous metadata, retained the author-approved AI-use appendix verbatim, and inserted HotCRP submission number 4950."
+      validation: "Three-pass build plus automated PDF text, page-size, font-embedding, metadata, prohibited-term, submission-banner, and AI-disclosure checks."
+  score_blockers:
+    - "No paired zero-prefix end-to-end evidence of success, minimum II, route cost, or quality versus time."
+    - "Proposal/top-k runtime remains noncompetitive and top-k has no completed quality result."
+    - "Training configuration, held-out ranking metrics, and learned-component ablations are unavailable."
+    - "Dual usefulness and stability are not measured."
+    - "Exhaustive ordered-transition symmetry equivalence tests are not available."
+    - "No common-contract closest learned/routing-aware baseline result is available."
+  generated_files:
+    - "revised_paper.zip"
+    - "revised_paper.pdf"
+    - "REVISION_REPORT.md"
+    - "AUTHOR_ACTIONS.md"
+    - "DRAFT_VALUE_LEDGER.csv"
+    - "BUILD_REPORT.md"
+    - "REVIEW_RESPONSE.yaml"

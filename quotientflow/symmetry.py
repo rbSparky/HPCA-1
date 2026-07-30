@@ -10,6 +10,17 @@ from .arch import Architecture, RoutingNode, verify_arch_permutation
 from .dfg import DFG, verify_dfg_permutation
 from .partial_state import PartialState
 
+
+def preserves_total_operation_order(dfg: DFG, perm: Dict[int, int]) -> bool:
+    """Whether ``perm`` commutes with the mapper's deterministic total order.
+
+    Typed graph automorphism alone is insufficient for a sequential mapper:
+    swapping two tied operations also swaps which operation is expanded first.
+    Such a transform is excluded from exact search quotienting.
+    """
+    order = tuple(dfg.order)
+    return tuple(perm[node] for node in order) == order
+
 def architecture_edge_map(
     arch: Architecture, perm: Dict[RoutingNode, RoutingNode]
 ) -> Dict[int, int]:
@@ -88,6 +99,8 @@ def canonical_key(
         dfg_edge_index = {edge: idx for idx, edge in enumerate(dfg_edges)}
         dfg_actions = []
         for perm in dfg.automorphisms:
+            if not preserves_total_operation_order(dfg, perm):
+                continue
             dfg_actions.append(
                 (
                     tuple(operation_index[perm[op]] for op in operations),

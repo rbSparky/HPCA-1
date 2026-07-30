@@ -17,7 +17,11 @@ from .arch import Architecture, RoutingNode
 from .dfg import DFG
 from .mapper import Action
 from .partial_state import PartialState, residual_graph
-from .symmetry import architecture_edge_map, transform_state
+from .symmetry import (
+    architecture_edge_map,
+    preserves_total_operation_order,
+    transform_state,
+)
 
 
 FEATURE_NAMES = [
@@ -549,6 +553,8 @@ def stabilizer_action_orbits(
     for dfg_perm, arch_perm in itertools.product(
         dfg.automorphisms, arch.symmetries
     ):
+        if not preserves_total_operation_order(dfg, dfg_perm):
+            continue
         if dfg_perm[op] != op:
             continue
         edge_map = architecture_edge_map(arch, arch_perm)
@@ -633,6 +639,8 @@ def stabilizer_target_orbits(
     for dfg_perm, arch_perm in itertools.product(
         dfg.automorphisms, arch.symmetries
     ):
+        if not preserves_total_operation_order(dfg, dfg_perm):
+            continue
         if dfg_perm[op] != op:
             continue
         edge_map = architecture_edge_map(arch, arch_perm)

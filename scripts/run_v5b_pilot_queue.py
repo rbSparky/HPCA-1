@@ -153,9 +153,9 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
                 "deterministic_length_prefix initialization policy"
             )
         depth_fraction = float(row.get("initialization_depth_fraction", 0.0))
-        if not 0.0 < depth_fraction < 1.0:
+        if not 0.0 <= depth_fraction < 1.0:
             raise ValueError(
-                "initialization_depth_fraction must be frozen in (0,1)"
+                "initialization_depth_fraction must be frozen in [0,1)"
             )
         if row.get("full_end_to_end") is not True:
             raise ValueError(

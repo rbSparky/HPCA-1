@@ -95,6 +95,28 @@ def _optional_bool(value: Any, default: bool) -> bool:
     raise ValueError(f"invalid boolean manifest value {value!r}")
 
 
+def _prefix_depth(total_operations: int, depth_fraction: float) -> int:
+    """Return the exact deterministic-prefix depth.
+
+    A zero fraction is scientifically meaningful: it requests evaluation from
+    the genuine empty mapping state.  Older pilot code forced every fraction
+    through ``max(1, ...)``, so a nominal root-state experiment silently
+    contained an anchored operation.  Keep the upper bound open because a
+    prefix containing every operation would not leave a mapping experiment.
+    """
+
+    if total_operations <= 0:
+        raise ValueError("native problem must contain at least one operation")
+    if not 0.0 <= depth_fraction < 1.0:
+        raise ValueError("initialization_depth_fraction must lie in [0,1)")
+    if depth_fraction == 0.0:
+        return 0
+    return min(
+        total_operations - 1,
+        max(1, int(math.ceil(depth_fraction * total_operations))),
+    )
+
+
 def _resolve_mapper(spec: dict[str, Any]) -> Path:
     if spec.get("mapper_binary"):
         return Path(spec["mapper_binary"]).resolve()
@@ -326,15 +348,19 @@ def _native_search(
     # into the mapping problem or read for placement/routing semantics.
     dfg = json.loads(dfg_path.read_text(encoding="utf-8"))
     mrrg = json.loads(architecture_path.read_text(encoding="utf-8"))
-    witness_path = Path(spec.get("reference_mapping_path", ""))
-    if not witness_path.is_file():
-        raise FileNotFoundError(
-            "length search requires an explicit native reference_mapping_path "
-            "for FU latency witnesses"
-        )
-    if sha256_file(witness_path) != spec.get("reference_mapping_hash"):
-        raise ValueError("native reference-mapping hash changed after freeze")
-    witness = json.loads(witness_path.read_text(encoding="utf-8"))
+    # Modern native exports carry the complete per-FU operation-latency table
+    # in mrrg.json.  A reference mapping is optional provenance only and must
+    # never be required to construct a problem or read for placements/routes.
+    witness_value = str(spec.get("reference_mapping_path") or "").strip()
+    if witness_value:
+        witness_path = Path(witness_value)
+        if not witness_path.is_file():
+            raise FileNotFoundError(
+                f"optional reference mapping does not exist: {witness_path}"
+            )
+        expected_witness_hash = str(spec.get("reference_mapping_hash") or "")
+        if expected_witness_hash and sha256_file(witness_path) != expected_witness_hash:
+            raise ValueError("native reference-mapping hash changed after freeze")
     from flowadvantage.morpher_adapter.native_beam_mapper import (
         DeterministicNativeBeamMapper,
         NativeActionScorer,
@@ -362,46 +388,71 @@ def _native_search(
             "are prohibited for paper mapping experiments"
         )
     depth_fraction = float(spec.get("initialization_depth_fraction", 0.40))
-    if not 0.0 < depth_fraction < 1.0:
-        raise ValueError("initialization_depth_fraction must lie in (0,1)")
     total_operations = len(problem.nodes)
-    prefix_depth = max(1, min(total_operations - 1, int(math.ceil(
-        depth_fraction * total_operations
-    ))))
+    prefix_depth = _prefix_depth(total_operations, depth_fraction)
     prefix_started = time.monotonic()
     from flowadvantage.morpher_adapter.native_beam_mapper import (
         DeterministicNativeBeamMapper,
     )
-    prefix_mapper = DeterministicNativeBeamMapper(
-        problem,
-        scorer=LengthActionScorer(),
-        config=NativeBeamConfig(
-            beam_width=int(spec.get("beam_width") or 4),
-            k_paths=int(spec.get("k_paths") or 4),
-            per_state_action_limit=(
-                int(spec["action_limit"]) if spec.get("action_limit") else None
+    initial_state = NativeMappingState(problem)
+    initial_frontier = None
+    prefix_expansions = 0
+    prefix_generated_actions = 0
+    prefix_routing_attempts = 0
+    prefix_stage_seconds: dict[str, float] = {}
+    prefix_frontier_size = 1
+    if prefix_depth:
+        prefix_mapper = DeterministicNativeBeamMapper(
+            problem,
+            scorer=LengthActionScorer(),
+            config=NativeBeamConfig(
+                beam_width=int(spec.get("beam_width") or 4),
+                k_paths=int(spec.get("k_paths") or 4),
+                per_state_action_limit=(
+                    int(spec["action_limit"]) if spec.get("action_limit") else None
+                ),
+                max_expansions=(
+                    int(spec["max_expansions"])
+                    if spec.get("max_expansions")
+                    else None
+                ),
+                stop_after_mapped_operations=prefix_depth,
             ),
-            max_expansions=(
-                int(spec["max_expansions"]) if spec.get("max_expansions") else None
-            ),
-            stop_after_mapped_operations=prefix_depth,
-        ),
-        progress_callback=lambda event: progress.update({
-            "stage": "initialization_" + event.stage.lower(),
-            "mapped_operations": event.depth,
-            "expansions": event.expansions,
-            "candidate_actions": event.generated_actions,
-            "routing_attempts": event.routed_actions + event.failed_targets,
-        }),
-    )
-    prefix_result = prefix_mapper.map(initial_state=NativeMappingState(problem))
-    if prefix_result.metrics.termination != "PARTIAL_DEPTH_REACHED" or prefix_result.state is None:
-        raise RuntimeError(
-            "deterministic length-prefix initialization failed: "
-            f"{prefix_result.metrics.termination}"
+            progress_callback=lambda event: progress.update({
+                "stage": "initialization_" + event.stage.lower(),
+                "mapped_operations": event.depth,
+                "expansions": event.expansions,
+                "candidate_actions": event.generated_actions,
+                "routing_attempts": event.routed_actions + event.failed_targets,
+            }),
         )
-    initial_state = prefix_result.state
-    initial_frontier = prefix_result.frontier
+        prefix_result = prefix_mapper.map(initial_state=initial_state)
+        if (
+            prefix_result.metrics.termination != "PARTIAL_DEPTH_REACHED"
+            or prefix_result.state is None
+        ):
+            raise RuntimeError(
+                "deterministic length-prefix initialization failed: "
+                f"{prefix_result.metrics.termination}"
+            )
+        initial_state = prefix_result.state
+        initial_frontier = prefix_result.frontier
+        prefix_expansions = prefix_result.metrics.expansions
+        prefix_generated_actions = prefix_result.metrics.generated_actions
+        prefix_routing_attempts = (
+            prefix_result.metrics.routed_actions
+            + prefix_result.metrics.failed_targets
+        )
+        prefix_stage_seconds = {
+            f"initialization_{key}": float(value)
+            for key, value in prefix_result.metrics.stage_seconds.items()
+        }
+        prefix_frontier_size = len(initial_frontier)
+    else:
+        # Do not invoke a prefix mapper at all.  This guarantees that root
+        # experiments have no hidden placement, route, occupancy, or beam
+        # selection inherited from an initialization phase.
+        progress.update({"stage": "initialization_empty_root"})
     initialization_seconds = time.monotonic() - prefix_started
 
     from flowadvantage.morpher_adapter.native_relaxation import (
@@ -464,7 +515,10 @@ def _native_search(
             if method == "flow_proposal":
                 scorer = proposal
             else:
-                child_evaluator = NativeExactChildEvaluator(solver)
+                child_evaluator = NativeExactChildEvaluator(
+                    solver,
+                    parallelism=int(spec.get("child_parallelism") or 1),
+                )
                 if method == "flow_top4":
                     scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
                 elif method == "full_relaxed_lookahead":
@@ -525,15 +579,15 @@ def _native_search(
         ),
         progress_callback=callback,
     )
-    result = mapper.map(initial_frontier=initial_frontier)
+    result = (
+        mapper.map(initial_frontier=initial_frontier)
+        if initial_frontier is not None
+        else mapper.map(initial_state=initial_state)
+    )
     elapsed = time.monotonic() - started
     total_elapsed = initialization_seconds + elapsed
-    prefix_metrics = prefix_result.metrics
     combined_stage_seconds = {
-        **{
-            f"initialization_{key}": float(value)
-            for key, value in prefix_metrics.stage_seconds.items()
-        },
+        **prefix_stage_seconds,
         **{
             f"completion_{key}": float(value)
             for key, value in result.metrics.stage_seconds.items()
@@ -555,13 +609,12 @@ def _native_search(
         "mapped_operations": result.metrics.mapped_operations,
         "operation_count": result.metrics.total_operations,
         "route_cost": result.metrics.route_cost,
-        "expansions": prefix_metrics.expansions + result.metrics.expansions,
+        "expansions": prefix_expansions + result.metrics.expansions,
         "generated_actions": (
-            prefix_metrics.generated_actions + result.metrics.generated_actions
+            prefix_generated_actions + result.metrics.generated_actions
         ),
         "routing_attempts": (
-            prefix_metrics.routed_actions
-            + prefix_metrics.failed_targets
+            prefix_routing_attempts
             + result.metrics.routed_actions
             + result.metrics.failed_targets
         ),
@@ -576,10 +629,10 @@ def _native_search(
         "initialization_depth_fraction": depth_fraction,
         "initialization_mapped_operations": prefix_depth,
         "initialization_seconds": initialization_seconds,
-        "initialization_expansions": prefix_result.metrics.expansions,
-        "initialization_generated_actions": prefix_result.metrics.generated_actions,
-        "initialization_routing_attempts": prefix_result.metrics.routed_actions + prefix_result.metrics.failed_targets,
-        "initialization_frontier_size": len(initial_frontier),
+        "initialization_expansions": prefix_expansions,
+        "initialization_generated_actions": prefix_generated_actions,
+        "initialization_routing_attempts": prefix_routing_attempts,
+        "initialization_frontier_size": prefix_frontier_size,
         "scorer_rejected_states": result.metrics.scorer_rejected_states,
         "scorer_rejection_reasons": result.metrics.scorer_rejection_reasons,
         "stage_seconds": combined_stage_seconds,
@@ -595,6 +648,12 @@ def _native_search(
         ),
         "relaxation_cache_hits": int(getattr(solver, "cache_hits", 0)),
         "relaxation_cache_misses": int(getattr(solver, "cache_misses", 0)),
+        "relaxation_structure_cache_hits": int(
+            getattr(solver, "structure_cache_hits", 0)
+        ),
+        "relaxation_structure_cache_misses": int(
+            getattr(solver, "structure_cache_misses", 0)
+        ),
     }
     if timing_provider is not None and timing_provider.last_timing is not None:
         timing = timing_provider.last_timing
@@ -608,8 +667,12 @@ def _native_search(
         payload.update({
             "child_relaxation_seconds": child_evaluator.total_solve_seconds,
             "child_relaxation_wall_seconds": (
+                child_evaluator.total_batch_wall_seconds
+            ),
+            "child_relaxation_logical_request_seconds": (
                 child_evaluator.total_request_wall_seconds
             ),
+            "child_parallelism": child_evaluator.parallelism,
             "child_cache_read_seconds": (
                 child_evaluator.total_cache_read_seconds
             ),

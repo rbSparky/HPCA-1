@@ -1,0 +1,87 @@
+{
+  "checks": [
+    {
+      "detail": "main.tex must define submission number 4950 exactly",
+      "name": "submission_number_source",
+      "passed": true
+    },
+    {
+      "detail": "rendered-use count=0",
+      "name": "no_draftvalue_calls",
+      "passed": true
+    },
+    {
+      "detail": "approved appendix text must remain verbatim",
+      "name": "approved_ai_disclosure_unchanged",
+      "passed": true
+    },
+    {
+      "detail": "/home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.pdf",
+      "name": "pdf_exists",
+      "passed": true
+    },
+    {
+      "detail": "/home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.log",
+      "name": "log_exists",
+      "passed": true
+    },
+    {
+      "detail": "PDF contains 4950",
+      "name": "submission_number_rendered",
+      "passed": true
+    },
+    {
+      "detail": "matches=[]",
+      "name": "no_prohibited_draft_text",
+      "passed": true
+    },
+    {
+      "detail": "matches=[]",
+      "name": "visible_anonymity_scan",
+      "passed": true
+    },
+    {
+      "detail": "pages=10; current package target=10",
+      "name": "page_count",
+      "passed": true
+    },
+    {
+      "detail": "612 x 792 pts (letter)",
+      "name": "us_letter",
+      "passed": true
+    },
+    {
+      "detail": "Author=''",
+      "name": "blank_pdf_author",
+      "passed": true
+    },
+    {
+      "detail": "checking /home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.pdf\nPDF Version: 1.5\nFile is not encrypted\nFile is not linearized\nNo syntax or stream encoding errors found; the file may still contain\nerrors that qpdf cannot detect",
+      "name": "qpdf_integrity",
+      "passed": true
+    },
+    {
+      "detail": "font_rows=25",
+      "name": "fonts_present",
+      "passed": true
+    },
+    {
+      "detail": "unembedded_rows=0",
+      "name": "fonts_embedded",
+      "passed": true
+    },
+    {
+      "detail": "matches=0",
+      "name": "no_undefined_references",
+      "passed": true
+    },
+    {
+      "detail": "matches=0",
+      "name": "no_overfull_boxes",
+      "passed": true
+    }
+  ],
+  "paper_dir": "/home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper",
+  "passed": true,
+  "schema": "hpca1_paper_preflight_v1"
+}

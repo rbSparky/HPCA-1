@@ -19,6 +19,8 @@ import json
 import math
 import os
 import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -51,6 +53,7 @@ class NativeRelaxationConfig:
     max_solve_seconds: float = 120.0
     feasibility_tolerance: float = 1e-7
     reachable_edge_pruning: bool = True
+    structure_cache_enabled: bool = True
     cache_version: str = "native_mrrg_fractional_v4"
 
     def __post_init__(self) -> None:
@@ -136,6 +139,17 @@ class NativeChildEvaluation:
     error: str = ""
 
 
+@dataclass(frozen=True)
+class _NativeProblemIndex:
+    """Immutable sparse indexing shared by every state of one native problem."""
+
+    resource_ids: tuple[str, ...]
+    resource_index: dict[str, int]
+    native_edges: tuple[tuple[str, str], ...]
+    edge_index: dict[tuple[str, str], int]
+    edge_ids: tuple[str, ...]
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_jsonable(item) for item in value]
@@ -178,6 +192,25 @@ class NativeRelaxationSolver:
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._memory_cache: dict[str, NativeRelaxationResult] = {}
+        # A worker maps many states of the same immutable DFG/MRRG.  Keep the
+        # expensive deterministic native-ID indexing and state-independent
+        # sparse structures once.  Entries retain the problem object alongside
+        # its id so an id recycled by Python can never alias another problem.
+        self._problem_indices: dict[
+            int, tuple[NativeMorpherProblem, _NativeProblemIndex]
+        ] = {}
+        self._clique_cache: dict[
+            tuple[int, tuple[str, ...]], tuple[tuple[str, ...], ...]
+        ] = {}
+        self._incidence_cache: OrderedDict[
+            tuple[int, tuple[int, ...]],
+            tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix],
+        ] = OrderedDict()
+        self._corridor_cache: OrderedDict[
+            tuple[Any, ...], np.ndarray
+        ] = OrderedDict()
+        self.structure_cache_hits = 0
+        self.structure_cache_misses = 0
         # Native MRRG topology is immutable across states.  Reachability used
         # to rebuild phase tables and adjacency lists for every dependency;
         # retain the exact indexed graph once per problem/edge ordering.
@@ -188,6 +221,46 @@ class NativeRelaxationSolver:
         self.solve_calls = 0
         self.cache_hits = 0
         self.cache_misses = 0
+
+    def _problem_index(self, problem: NativeMorpherProblem) -> _NativeProblemIndex:
+        identity = id(problem)
+        cached = (
+            self._problem_indices.get(identity)
+            if self.config.structure_cache_enabled
+            else None
+        )
+        if cached is not None and cached[0] is problem:
+            self.structure_cache_hits += 1
+            return cached[1]
+        resource_ids = tuple(sorted(problem.resources))
+        native_edges = tuple(
+            sorted(
+                {
+                    (str(edge["src"]), str(edge["dst"]))
+                    for edge in problem.mrrg.get("edges", [])
+                }
+            )
+        )
+        index = _NativeProblemIndex(
+            resource_ids=resource_ids,
+            resource_index={rid: column for column, rid in enumerate(resource_ids)},
+            native_edges=native_edges,
+            edge_index={edge: column for column, edge in enumerate(native_edges)},
+            edge_ids=tuple(f"{left}->{right}" for left, right in native_edges),
+        )
+        if self.config.structure_cache_enabled:
+            self._problem_indices[identity] = (problem, index)
+        self.structure_cache_misses += 1
+        return index
+
+    @staticmethod
+    def _bounded_put(cache: OrderedDict, key: Any, value: Any, limit: int) -> None:
+        """Insert an immutable derived structure without unbounded worker RSS."""
+
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > limit:
+            cache.popitem(last=False)
 
     def solve(
         self,
@@ -282,18 +355,12 @@ class NativeRelaxationSolver:
                 cache_key=cache_key,
             )
 
-        resource_ids = tuple(sorted(problem.resources))
-        resource_index = {rid: index for index, rid in enumerate(resource_ids)}
-        native_edges = tuple(
-            sorted(
-                {
-                    (str(edge["src"]), str(edge["dst"]))
-                    for edge in problem.mrrg.get("edges", [])
-                }
-            )
-        )
-        edge_index = {edge: index for index, edge in enumerate(native_edges)}
-        edge_ids = tuple(f"{left}->{right}" for left, right in native_edges)
+        problem_index = self._problem_index(problem)
+        resource_ids = problem_index.resource_ids
+        resource_index = problem_index.resource_index
+        native_edges = problem_index.native_edges
+        edge_index = problem_index.edge_index
+        edge_ids = problem_index.edge_ids
         r_count, e_count = len(resource_ids), len(native_edges)
 
         # Placement candidates are exact native FU/DataPath/absolute-latency
@@ -461,22 +528,46 @@ class NativeRelaxationSolver:
                     placement_variables=len(candidates),
                 )
             commodity_columns.append(columns)
-            local_rows: list[int] = []
-            local_cols: list[int] = []
-            local_values: list[float] = []
-            for local_column, global_column in enumerate(columns):
-                source_resource, destination_resource = native_edges[int(global_column)]
-                local_rows.extend(
-                    (resource_index[source_resource], resource_index[destination_resource])
-                )
-                local_cols.extend((local_column, local_column))
-                local_values.extend((1.0, -1.0))
-            local_incidence = sp.csr_matrix(
-                (local_values, (local_rows, local_cols)),
-                shape=(r_count, len(columns)),
+            incidence_key = (id(problem), tuple(int(value) for value in columns))
+            cached_incidence = (
+                self._incidence_cache.get(incidence_key)
+                if self.config.structure_cache_enabled
+                else None
             )
-            local_outgoing = local_incidence.maximum(0.0)
-            local_incoming = (-local_incidence).maximum(0.0)
+            if cached_incidence is None:
+                local_rows: list[int] = []
+                local_cols: list[int] = []
+                local_values: list[float] = []
+                for local_column, global_column in enumerate(columns):
+                    source_resource, destination_resource = native_edges[
+                        int(global_column)
+                    ]
+                    local_rows.extend(
+                        (
+                            resource_index[source_resource],
+                            resource_index[destination_resource],
+                        )
+                    )
+                    local_cols.extend((local_column, local_column))
+                    local_values.extend((1.0, -1.0))
+                local_incidence = sp.csr_matrix(
+                    (local_values, (local_rows, local_cols)),
+                    shape=(r_count, len(columns)),
+                )
+                local_outgoing = local_incidence.maximum(0.0).tocsr()
+                local_incoming = (-local_incidence).maximum(0.0).tocsr()
+                if self.config.structure_cache_enabled:
+                    self._bounded_put(
+                        self._incidence_cache,
+                        incidence_key,
+                        (local_incidence, local_outgoing, local_incoming),
+                        256,
+                    )
+                self.structure_cache_misses += 1
+            else:
+                self._incidence_cache.move_to_end(incidence_key)
+                local_incidence, local_outgoing, local_incoming = cached_incidence
+                self.structure_cache_hits += 1
             commodity_incidences.append(local_incidence)
             commodity_outgoing.append(local_outgoing)
             commodity_incoming.append(local_incoming)
@@ -570,9 +661,21 @@ class NativeRelaxationSolver:
             )
         )
 
-        incompatibility_cliques = self._incompatibility_cliques(
-            problem, source_keys
+        clique_key = (id(problem), source_keys)
+        incompatibility_cliques = (
+            self._clique_cache.get(clique_key)
+            if self.config.structure_cache_enabled
+            else None
         )
+        if incompatibility_cliques is None:
+            incompatibility_cliques = self._incompatibility_cliques(
+                problem, source_keys
+            )
+            if self.config.structure_cache_enabled:
+                self._clique_cache[clique_key] = incompatibility_cliques
+            self.structure_cache_misses += 1
+        else:
+            self.structure_cache_hits += 1
         routing_constraints: list[
             tuple[
                 str,
@@ -748,6 +851,25 @@ class NativeRelaxationSolver:
         destination_options = options(destination_key, False)
         if not source_options or not destination_options:
             return np.zeros(0, dtype=int)
+        corridor_key = (
+            id(problem),
+            source_key,
+            destination_key,
+            edge_type,
+            distance,
+            tuple(sorted(source_options)),
+            tuple(sorted(destination_options)),
+            len(native_edges),
+        )
+        cached_corridor = (
+            self._corridor_cache.get(corridor_key)
+            if self.config.structure_cache_enabled
+            else None
+        )
+        if cached_corridor is not None:
+            self._corridor_cache.move_to_end(corridor_key)
+            self.structure_cache_hits += 1
+            return cached_corridor
         min_time = min(value for _, value in source_options)
         max_time = max(value for _, value in destination_options)
         if min_time > max_time:
@@ -823,7 +945,14 @@ class NativeRelaxationSolver:
                 if (right, timestamp + delta) in backward:
                     relevant.add(global_column)
                     break
-        return np.asarray(sorted(relevant), dtype=int)
+        result = np.asarray(sorted(relevant), dtype=int)
+        result.setflags(write=False)
+        if self.config.structure_cache_enabled:
+            self._bounded_put(
+                self._corridor_cache, corridor_key, result, 512
+            )
+        self.structure_cache_misses += 1
+        return result
 
     @staticmethod
     def _incompatibility_cliques(
@@ -1189,14 +1318,75 @@ def _native_failure(
 class NativeExactChildEvaluator:
     """Evaluate strict ``immediate_cost + exact child residual`` scores."""
 
-    def __init__(self, solver: NativeRelaxationSolver) -> None:
+    def __init__(
+        self,
+        solver: NativeRelaxationSolver,
+        *,
+        parallelism: int = 1,
+    ) -> None:
+        if parallelism <= 0:
+            raise ValueError("child relaxation parallelism must be positive")
         self.solver = solver
+        self.parallelism = int(parallelism)
+        # Each lane owns its solver and all CVXPY/native-solver state.  Sharing
+        # one solver between threads would race mutable warm starts, counters,
+        # and in-memory caches.  The disk cache remains process-safe through
+        # atomic rename and semantic content hashes.
+        self._lane_solvers = [solver] + [
+            NativeRelaxationSolver(solver.config, cache_dir=solver.cache_dir)
+            for _ in range(self.parallelism - 1)
+        ]
         self.last_evaluations: tuple[NativeChildEvaluation, ...] = ()
         self.total_evaluations = 0
         self.total_cache_hits = 0
         self.total_solve_seconds = 0.0
         self.total_request_wall_seconds = 0.0
+        self.total_batch_wall_seconds = 0.0
         self.total_cache_read_seconds = 0.0
+
+    @staticmethod
+    def _evaluate_one(
+        solver: NativeRelaxationSolver,
+        problem: NativeMorpherProblem,
+        state: NativeMappingState,
+        action: NativeAction,
+    ) -> tuple[NativeChildEvaluation, float]:
+        request_start = time.perf_counter()
+        child = state.apply_action(action)
+        immediate = float(
+            sum(max(0, len(route.resource_ids) - 1) for route in action.routes)
+        )
+        if child is None:
+            record = NativeChildEvaluation(
+                action_key=action.stable_key(),
+                immediate_cost=immediate,
+                residual_objective=float("nan"),
+                q_rel=math.inf,
+                residual_feasible=False,
+                solve_status="illegal_child",
+                solve_seconds=0.0,
+                cache_hit=False,
+                error="action could not be committed atomically",
+            )
+        else:
+            result = solver.solve(problem, child)
+            q_rel = (
+                immediate + result.objective
+                if result.feasible and math.isfinite(result.objective)
+                else math.inf
+            )
+            record = NativeChildEvaluation(
+                action_key=action.stable_key(),
+                immediate_cost=immediate,
+                residual_objective=result.objective,
+                q_rel=q_rel,
+                residual_feasible=result.feasible,
+                solve_status=result.status,
+                solve_seconds=result.solve_seconds,
+                cache_hit=result.cache_hit,
+                error=result.error,
+            )
+        return record, time.perf_counter() - request_start
 
     def evaluate_children(
         self,
@@ -1204,52 +1394,47 @@ class NativeExactChildEvaluator:
         state: NativeMappingState,
         actions: Sequence[NativeAction],
     ) -> Sequence[float]:
-        records: list[NativeChildEvaluation] = []
-        scores: list[float] = []
-        for action in actions:
-            request_start = time.perf_counter()
-            child = state.apply_action(action)
-            immediate = float(
-                sum(max(0, len(route.resource_ids) - 1) for route in action.routes)
-            )
-            if child is None:
-                record = NativeChildEvaluation(
-                    action_key=action.stable_key(),
-                    immediate_cost=immediate,
-                    residual_objective=float("nan"),
-                    q_rel=math.inf,
-                    residual_feasible=False,
-                    solve_status="illegal_child",
-                    solve_seconds=0.0,
-                    cache_hit=False,
-                    error="action could not be committed atomically",
+        batch_start = time.perf_counter()
+        indexed_records: list[tuple[int, NativeChildEvaluation, float]] = []
+        if self.parallelism == 1 or len(actions) <= 1:
+            for index, action in enumerate(actions):
+                record, request_seconds = self._evaluate_one(
+                    self.solver, problem, state, action
                 )
-            else:
-                result = self.solver.solve(problem, child)
-                q_rel = (
-                    immediate + result.objective
-                    if result.feasible and math.isfinite(result.objective)
-                    else math.inf
-                )
-                record = NativeChildEvaluation(
-                    action_key=action.stable_key(),
-                    immediate_cost=immediate,
-                    residual_objective=result.objective,
-                    q_rel=q_rel,
-                    residual_feasible=result.feasible,
-                    solve_status=result.status,
-                    solve_seconds=result.solve_seconds,
-                    cache_hit=result.cache_hit,
-                    error=result.error,
-                )
-            request_seconds = time.perf_counter() - request_start
-            records.append(record)
-            scores.append(record.q_rel)
+                indexed_records.append((index, record, request_seconds))
+        else:
+            # Assign one sequential slice to each solver lane.  A lane solver
+            # is therefore never invoked concurrently, while independent child
+            # relaxations overlap in native solver code.
+            lanes = min(self.parallelism, len(actions))
+            slices = [
+                list(range(lane, len(actions), lanes)) for lane in range(lanes)
+            ]
+
+            def run_lane(lane: int) -> list[tuple[int, NativeChildEvaluation, float]]:
+                values = []
+                lane_solver = self._lane_solvers[lane]
+                for index in slices[lane]:
+                    record, request_seconds = self._evaluate_one(
+                        lane_solver, problem, state, actions[index]
+                    )
+                    values.append((index, record, request_seconds))
+                return values
+
+            with ThreadPoolExecutor(max_workers=lanes) as executor:
+                futures = [executor.submit(run_lane, lane) for lane in range(lanes)]
+                for future in futures:
+                    indexed_records.extend(future.result())
+        indexed_records.sort(key=lambda value: value[0])
+        records = [value[1] for value in indexed_records]
+        scores = [record.q_rel for record in records]
+        for _, record, request_seconds in indexed_records:
             self.total_request_wall_seconds += request_seconds
             if record.cache_hit:
                 self.total_cache_read_seconds += request_seconds
             else:
                 self.total_solve_seconds += float(record.solve_seconds)
+        self.total_batch_wall_seconds += time.perf_counter() - batch_start
         self.last_evaluations = tuple(records)
         self.total_evaluations += len(records)
         self.total_cache_hits += sum(record.cache_hit for record in records)

@@ -1,0 +1,103 @@
+--- a/include/morpher/util/util.h
++++ b/include/morpher/util/util.h
+@@ -47,6 +47,7 @@
+ 	unsigned int random_seed = 0;
+ 	bool has_random_seed = false;
+ 	std::string dump_flowadvantage_state = "";
++	std::string dump_flowadvantage_problem = "";
+ 	std::string load_flowadvantage_mapping = "";
+ 	std::string arch_name = "";
+ 	lisa_arguments lisa_arg;
+@@ -147,6 +148,7 @@
+ 		.add_option<bool>("", "--lisa_training", "lisa training", false)
+ 		.add_option<std::string>("", "--dfg_id", "the dfg id used to generate training data", "none")
+ 		.add_option<std::string>("", "--dump-flowadvantage-state", "export native DFG/MRRG/mapping JSON", "")
++		.add_option<std::string>("", "--dump-flowadvantage-problem", "export native DFG/MRRG JSON at explicit II without running a mapper", "")
+ 		.add_option<std::string>("", "--load-flowadvantage-mapping", "import FlowAdvantage mapping JSON", "")
+         .parse(argn, argc);
+ 
+@@ -174,6 +176,7 @@
+ 	lisa_arg.dfg_id = args.get_option<std::string>("--dfg_id");
+ 	ret.lisa_arg = lisa_arg;
+ 	ret.dump_flowadvantage_state = args.get_option<std::string>("--dump-flowadvantage-state");
++	ret.dump_flowadvantage_problem = args.get_option<std::string>("--dump-flowadvantage-problem");
+ 	ret.load_flowadvantage_mapping = args.get_option<std::string>("--load-flowadvantage-mapping");
+ 	assert(ret.dfg_filename!= "");
+ 	assert(ret.json_file_name!= "");
+--- a/include/morpher/arch/CGRA.h
++++ b/include/morpher/arch/CGRA.h
+@@ -172,7 +172,7 @@
+ 	void PrintMappedJSON(string fileName);
+ 	// FlowAdvantage v1 bridge: exports the actual expanded CGRA state and
+ 	// current native mapping without changing mapper semantics.
+-	bool ExportFlowAdvantageState(const string &directory, DFG *dfg);
++	bool ExportFlowAdvantageState(const string &directory, DFG *dfg, bool include_mapping = true);
+ 	bool ImportFlowAdvantageMapping(const string &fileName, DFG *dfg, string &error);
+ 	bool ValidateFlowAdvantageMapping(DFG *dfg, string &error);
+ 	// by Yujie
+--- a/src/CGRA_xml_compiler.cpp
++++ b/src/CGRA_xml_compiler.cpp
+@@ -127,6 +127,34 @@
+ 	// exit(EXIT_SUCCESS);
+ 
+ 	auto start = chrono::steady_clock::now();
++	// Export the exact II-expanded native problem without first requiring a
++	// successful mapping. Reconstructing the MRRG from architecture JSON would
++	// omit native expansion and mapper-side memory-address semantics.
++	if (!args.dump_flowadvantage_problem.empty()) {
++		if (initUserII <= 0) {
++			std::cerr << "FlowAdvantage problem export requires explicit positive -i\n";
++			return 3;
++		}
++		DFG externalDFG;
++		externalDFG.parseXML(inputDFG_filename);
++		CGRA *externalCGRA;
++		if (json_file_name.empty())
++			externalCGRA = new CGRA(NULL, "coreCGRA", initUserII, ydim, xdim, &externalDFG, PEType, numberOfDPs, mapper->getcongestedPortsPtr());
++		else
++			externalCGRA = new CGRA(json_file_name, initUserII, xdim, ydim, mapper->getcongestedPortsPtr());
++		externalCGRA->max_hops = args.max_hops;
++		mapper->cgra = externalCGRA;
++		mapper->dfg = &externalDFG;
++		if (externalCGRA->is_spm_modelled) mapper->UpdateVariableBaseAddr();
++		bool exported = externalCGRA->ExportFlowAdvantageState(
++			args.dump_flowadvantage_problem, &externalDFG, false
++		);
++		std::cout << "FlowAdvantage problem export "
++			<< (exported ? "PASS" : "FAIL") << " to "
++			<< args.dump_flowadvantage_problem << "\n";
++		delete externalCGRA;
++		return exported ? 0 : 5;
++	}
+ 	// External mappings are loaded into a freshly expanded native MRRG.  Do not
+ 	// run a mapper first: that would hide importer defects behind a preexisting
+ 	// native placement/route state.  The caller must provide the mapping II via
+--- a/src/arch/CGRA.cpp
++++ b/src/arch/CGRA.cpp
+@@ -1372,7 +1372,7 @@
+ 	return best;
+ }
+ 
+-bool CGRAXMLCompile::CGRA::ExportFlowAdvantageState(const string &directory, DFG *dfg) {
++bool CGRAXMLCompile::CGRA::ExportFlowAdvantageState(const string &directory, DFG *dfg, bool include_mapping) {
+ 	fa_mkdir(directory);
+ 	json dfgj, mrrgj, mapj;
+ 	dfgj["schema"] = "flowadvantage_morpher_dfg_v1";
+@@ -1527,7 +1527,16 @@
+ 		rr["end_time"] = goal->getLat(); rr["export_status"]="ok"; mapj["routes"].push_back(rr);
+ 	}
+ 	dfgj["metadata"]["native_source"] = "DFG::nodeList"; mrrgj["metadata"]["native_source"] = "CGRA::subModules/getconnectedTo"; mapj["metadata"]["native_source"] = "DataPath::mappedNode + DFGNode::routingPorts";
+-	ofstream a(directory + "/dfg.json"), b(directory + "/mrrg.json"), c(directory + "/mapping.json"); if (!a || !b || !c) return false; a << setw(2) << dfgj << endl; b << setw(2) << mrrgj << endl; c << setw(2) << mapj << endl; return true;
++	ofstream a(directory + "/dfg.json"), b(directory + "/mrrg.json");
++	if (!a || !b) return false;
++	a << setw(2) << dfgj << endl;
++	b << setw(2) << mrrgj << endl;
++	if (include_mapping) {
++		ofstream c(directory + "/mapping.json");
++		if (!c) return false;
++		c << setw(2) << mapj << endl;
++	}
++	return true;
+ }
+ 
+ bool CGRAXMLCompile::CGRA::ImportFlowAdvantageMapping(const string &fileName, DFG *dfg, string &error) {

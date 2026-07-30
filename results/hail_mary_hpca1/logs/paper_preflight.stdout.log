@@ -1,0 +1,22 @@
+PASS submission_number_source: main.tex must define submission number 4950 exactly
+PASS no_draftvalue_calls: rendered-use count=0
+PASS approved_ai_disclosure_unchanged: approved appendix text must remain verbatim
+PASS pdf_exists: /home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.pdf
+PASS log_exists: /home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.log
+PASS submission_number_rendered: PDF contains 4950
+PASS no_prohibited_draft_text: matches=[]
+PASS visible_anonymity_scan: matches=[]
+PASS page_count: pages=10; current package target=10
+PASS us_letter: 612 x 792 pts (letter)
+PASS blank_pdf_author: Author=''
+PASS qpdf_integrity: checking /home/rishabh/HPCA/paper/hpca1_hail_mary/revised_paper/main.pdf
+PDF Version: 1.5
+File is not encrypted
+File is not linearized
+No syntax or stream encoding errors found; the file may still contain
+errors that qpdf cannot detect
+PASS fonts_present: font_rows=25
+PASS fonts_embedded: unembedded_rows=0
+PASS no_undefined_references: matches=0
+PASS no_overfull_boxes: matches=0
+OVERALL: PASS

@@ -1,0 +1,92 @@
+experiment:
+  name: hpca1_hail_mary_20260801
+  master_seed: 24072026
+  deadline_ist: "2026-08-01T10:00:00+05:30"
+  output_dir: results/hail_mary_hpca1
+  source_repo: https://github.com/rbSparky/HPCA-1
+  submission_number: 4950
+  deterministic: true
+  headline_prefix_fraction: 0.0
+  a3_locked_until_freeze: true
+  timeout_is_mapping_failure: false
+
+toolchain:
+  morpher_commit: 9a9dce7aea521f1d5ef33686f57ca84864edb3c9
+  adapter_schema: flowadvantage_morpher_mapping_v1
+  dfg_schema: flowadvantage_morpher_dfg_v1
+  mrrg_schema: flowadvantage_morpher_mrrg_v1
+
+benchmarks:
+  kernels: [array_add, array_cond, gemm_nt, fix_fft, hpcg, trmm]
+  core_architectures:
+    - A0_hycube4x4
+    - A1_stdnoc4x4
+    - A2_hycube4x4_mem_variant
+  held_out_architecture: A3_hycube8x8
+  unsupported_compute_fraction_max: 0.10
+  selection_frozen_before_test: true
+
+search:
+  ii_delta_min: 0
+  ii_delta_max: 4
+  per_ii_seconds: 120
+  aggregate_pair_method_seconds: 600
+  beam_width: 4
+  k_paths: 4
+  action_limit: 24
+  max_expansions: 5000
+  operation_order: stable_native_total_order
+  tie_tolerance: 1.0e-8
+
+methods:
+  deterministic: [length, dual_linear, flow_proposal, flow_top4, native_pathfinder]
+  stochastic: [native_simulated_annealing]
+  simulated_annealing_seeds: [11, 23, 37]
+  selected_checkpoint: results/revision_v3/checkpoints/residual_gnn_seed_23.pt
+  selected_checkpoint_sha256: 468a8ffc541d20efcc77333e8492d4a1fcda88a022a506c9013b809fb991cad8
+  witness_usage: provenance_hash_only
+
+secondary:
+  prefix_fractions: [0.0, 0.2, 0.4]
+  prefix_kernels: [array_add, array_cond, gemm_nt, fix_fft, hpcg, trmm]
+  prefix_architectures: [A0_hycube4x4, A1_stdnoc4x4, A2_hycube4x4_mem_variant]
+  topk_kernels: [array_add, array_cond, fix_fft, trmm]
+  topk_architectures: [A0_hycube4x4, A2_hycube4x4_mem_variant]
+  topk_values: [1, 2, 4, 8]
+  full_lookahead_seconds: 1200
+
+relaxation:
+  tau: 0.001
+  solver_primary: CLARABEL
+  solver_fallback: OSQP
+  feasibility_tolerance: 1.0e-7
+  per_solve_seconds: 120
+  reachable_edge_pruning: true
+  warm_start: true
+
+execution:
+  four_by_four_workers: 6
+  a3_workers_initial: 1
+  a3_workers_maximum: 2
+  thread_limit_per_worker: 1
+  heartbeat_seconds: 15
+  retry_infrastructure_failures: 1
+  process_start_method: spawn
+  atomic_results: true
+
+statistics:
+  bootstrap_resamples: 10000
+  bootstrap_seed: 24072026
+  paired_only: true
+  deterministic_timing_repeats: 3
+  deterministic_repeat_cells: 6
+
+status_enum:
+  - LEGAL_SUCCESS
+  - VALID_MAPPING_FAILURE
+  - TIMEOUT
+  - SOLVER_REJECTED
+  - VALIDATOR_FAILURE
+  - ERROR
+  - UNSUPPORTED
+  - CANCELLED

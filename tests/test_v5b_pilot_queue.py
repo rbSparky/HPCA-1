@@ -10,7 +10,12 @@ from pathlib import Path
 import pytest
 
 from scripts.run_v5b_pilot_queue import freeze_job, recover
-from scripts.run_v5b_pilot_worker import _optional_bool, _optional_float
+from scripts.run_v5b_pilot_worker import (
+    _native_search,
+    _optional_bool,
+    _optional_float,
+    _prefix_depth,
+)
 from scripts.v5b_pilot_queue_common import (
     atomic_csv,
     atomic_json,
@@ -211,6 +216,81 @@ def test_worker_manifest_defaults_survive_csv_empty_cells():
     assert _optional_bool("yes", False) is True
     with pytest.raises(ValueError, match="invalid boolean"):
         _optional_bool("maybe", True)
+
+
+def test_zero_initialization_fraction_is_the_true_empty_root():
+    assert _prefix_depth(25, 0.0) == 0
+    assert _prefix_depth(1, 0.0) == 0
+
+
+def test_positive_initialization_fraction_keeps_prior_rounding_contract():
+    assert _prefix_depth(25, 0.20) == 5
+    assert _prefix_depth(25, 0.01) == 1
+    assert _prefix_depth(4, 0.99) == 3
+    with pytest.raises(ValueError, match=r"\[0,1\)"):
+        _prefix_depth(4, 1.0)
+
+
+def test_native_search_zero_prefix_executes_without_hidden_initialization(
+    tmp_path,
+):
+    root = Path(__file__).resolve().parents[1]
+    corpus = (
+        root
+        / "results/revision_v5b/reference_mappings/array_add"
+        / "A0_hycube4x4_standard_fixed17_smoke"
+    )
+    payload = _native_search(
+        {
+            "method": "length",
+            "initialization_policy": "deterministic_length_prefix",
+            "initialization_depth_fraction": 0.0,
+            "beam_width": 1,
+            "k_paths": 1,
+            "action_limit": 1,
+            "max_expansions": 1,
+        },
+        corpus / "dfg.json",
+        corpus / "mrrg.json",
+        tmp_path / "artifacts",
+        {},
+    )
+    assert payload["initialization_mapped_operations"] == 0
+    assert payload["initialization_expansions"] == 0
+    assert payload["initialization_generated_actions"] == 0
+    assert payload["initialization_routing_attempts"] == 0
+    assert payload["initialization_frontier_size"] == 1
+    assert not any(
+        key.startswith("initialization_")
+        for key in payload["stage_seconds"]
+    )
+
+
+def test_optional_reference_mapping_is_provenance_only(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    corpus = (
+        root
+        / "results/revision_v5b/reference_mappings/array_add"
+        / "A0_hycube4x4_standard_fixed17_smoke"
+    )
+    # No reference_mapping_path is supplied.  The native DFG/MRRG contract is
+    # sufficient to construct and execute the mapper.
+    payload = _native_search(
+        {
+            "method": "length",
+            "initialization_policy": "deterministic_length_prefix",
+            "initialization_depth_fraction": 0.0,
+            "beam_width": 1,
+            "k_paths": 1,
+            "action_limit": 1,
+            "max_expansions": 1,
+        },
+        corpus / "dfg.json",
+        corpus / "mrrg.json",
+        tmp_path / "artifacts",
+        {},
+    )
+    assert payload["operation_count"] > 0
 
 
 def test_canonical_flow_methods_are_not_legacy_aliases():

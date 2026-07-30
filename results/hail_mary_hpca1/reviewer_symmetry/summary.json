@@ -1,0 +1,9 @@
+{
+  "schema": "quotientflow_transition_equivalence_v1",
+  "cases": 3,
+  "all_passed": true,
+  "reachable_states": 1591,
+  "checked_state_transforms": 4644,
+  "checked_actions": 4636,
+  "rejected_transforms": 12
+}

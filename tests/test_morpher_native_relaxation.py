@@ -194,6 +194,30 @@ def test_reachable_edge_pruning_preserves_deep_fixed17_value(
     assert pruned.routing_capacity_violation <= 1e-6
 
 
+def test_structure_reuse_is_numerically_equivalent(fixed17_residual, tmp_path):
+    problem, _, _, state = fixed17_residual
+    uncached = NativeRelaxationSolver(
+        NativeRelaxationConfig(structure_cache_enabled=False),
+        cache_dir=tmp_path / "structure-disabled",
+    ).solve(problem, state)
+    cached_solver = NativeRelaxationSolver(
+        NativeRelaxationConfig(structure_cache_enabled=True),
+        cache_dir=tmp_path / "structure-enabled",
+    )
+    cached = cached_solver.solve(problem, state)
+    assert uncached.feasible and cached.feasible
+    assert abs(uncached.objective - cached.objective) / max(
+        1.0, abs(uncached.objective)
+    ) <= 1e-6
+    assert uncached.assignment_residual <= 1e-6
+    assert cached.assignment_residual <= 1e-6
+    assert uncached.flow_residual <= 1e-6
+    assert cached.flow_residual <= 1e-6
+    assert uncached.routing_capacity_violation <= 1e-6
+    assert cached.routing_capacity_violation <= 1e-6
+    assert cached_solver.structure_cache_misses > 0
+
+
 def test_exact_child_evaluator_produces_finite_native_action_ranking(
     fixed17_residual, tmp_path
 ):
@@ -228,6 +252,47 @@ def test_exact_child_evaluator_produces_finite_native_action_ranking(
     assert len(set(scores)) == 2
     assert scores == tuple(record.q_rel for record in evaluator.last_evaluations)
     assert all(record.residual_feasible for record in evaluator.last_evaluations)
+
+
+def test_parallel_child_evaluation_preserves_scores_and_order(
+    fixed17_residual, tmp_path
+):
+    problem, mapping, excluded, state = fixed17_residual
+    reference = next(
+        operation
+        for operation in mapping["operations"]
+        if operation["native_node_key"] == excluded
+    )
+    actions = []
+    for placement in problem.placement_candidates(
+        excluded,
+        earliest_latency=int(reference["latency"]),
+        latest_latency=int(reference["latency"]),
+        state=state,
+    ):
+        actions.extend(
+            problem.actions_for_placement(
+                placement,
+                state,
+                k_paths=2,
+                max_route_combinations=2,
+                max_route_expansions=100_000,
+            )
+        )
+    sequential = NativeExactChildEvaluator(
+        NativeRelaxationSolver(cache_dir=tmp_path / "sequential"), parallelism=1
+    )
+    parallel = NativeExactChildEvaluator(
+        NativeRelaxationSolver(cache_dir=tmp_path / "parallel"), parallelism=2
+    )
+    sequential_scores = sequential.evaluate_children(problem, state, actions)
+    parallel_scores = parallel.evaluate_children(problem, state, actions)
+    assert parallel_scores == pytest.approx(sequential_scores, rel=1e-6, abs=1e-8)
+    assert [record.action_key for record in parallel.last_evaluations] == [
+        action.stable_key() for action in actions
+    ]
+    assert parallel.total_batch_wall_seconds > 0.0
+    assert parallel.total_request_wall_seconds > 0.0
     assert all(record.solve_status == "optimal" for record in evaluator.last_evaluations)
     assert all(record.residual_objective == 0.0 for record in evaluator.last_evaluations)
     assert evaluator.total_evaluations == len(actions)

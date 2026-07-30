@@ -1,0 +1,2 @@
+file,line,rendered_value,provenance,status,required_validation,affected_claim
+main.tex,24,4950,Author supplied in the QuotientFlow coding chat on 2026-07-31,RESOLVED,Three-pass build plus PDF text and metadata preflight,Venue formatting and desk-rejection compliance

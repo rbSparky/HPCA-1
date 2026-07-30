@@ -1,0 +1,4 @@
+case,reachable_states,terminal_states,admitted_transforms,rejected_transforms,checked_state_transforms,checked_actions,action_bijection,score_equivariance,successor_equivariance,terminal_legality,terminal_cost,passed,error
+tied_priority,1409,1392,3,7,4227,4224,True,True,True,True,True,True,
+recurrence,53,48,3,2,159,156,True,True,True,True,True,True,
+memory,129,126,2,3,258,256,True,True,True,True,True,True,
