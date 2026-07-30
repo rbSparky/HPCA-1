@@ -654,12 +654,21 @@ class NativeRelaxationSolver:
                     state._source_mutex(source_key, other) for other in existing
                 ):
                     edge_allowed[source_row, edge_column] = 0.0
-        constraints.extend(
-            (
-                z <= resource_allowed,
-                w <= edge_allowed,
+        # Keep these masks sparse.  The previous implementation emitted a
+        # dense CVXPY elementwise inequality for every source/resource and
+        # source/edge pair.  On native Morpher MRRGs that expression graph is
+        # needlessly enormous (and can consume many GB before the solver is
+        # reached).  A zero equality on the forbidden indices is exactly the
+        # same constraint, while retaining sparse indexed CVXPY expressions.
+        for source_row in range(len(source_keys)):
+            forbidden_resources = np.flatnonzero(
+                resource_allowed[source_row] <= 0.0
             )
-        )
+            if forbidden_resources.size:
+                constraints.append(z[source_row, forbidden_resources] == 0.0)
+            forbidden_edges = np.flatnonzero(edge_allowed[source_row] <= 0.0)
+            if forbidden_edges.size:
+                constraints.append(w[source_row, forbidden_edges] == 0.0)
 
         clique_key = (id(problem), source_keys)
         incompatibility_cliques = (
@@ -708,16 +717,39 @@ class NativeRelaxationSolver:
                         coefficients[row_offset, local_column] = 0.0
                 if any(key in fixed for key in clique):
                     fixed_count[local_column] = 1.0
-            constraint = (
-                cp.sum(
-                    cp.multiply(
-                        coefficients,
-                        z[np.ix_(rows_in_clique, non_mux_columns)],
-                    ),
-                    axis=0,
+            # All non-fixed entries in a clique have unit coefficient.  The
+            # fixed entries are represented in ``fixed_count``.  Avoiding a
+            # dense multiply here preserves the exact native capacity model
+            # but makes the expression graph proportional to the indexed
+            # variables rather than to a dense clique-by-resource matrix.
+            # A fixed source may be allowed to keep its own native signal in
+            # the resource variable, so it cannot be removed by the generic
+            # forbidden mask.  Remove fixed rows explicitly for each column;
+            # the grouped expression below is exact because its RHS is zero
+            # on columns with a fixed occupant and the fixed rows are omitted.
+            grouped_resource_columns: dict[tuple[int, ...], list[int]] = {}
+            for column_offset, resource_column in enumerate(non_mux_columns):
+                rid = resource_ids[resource_column]
+                active = tuple(
+                    row for row, key in zip(rows_in_clique, clique)
+                    if key not in fixed_resource_sources[rid]
                 )
-                <= 1.0 - fixed_count
-            )
+                grouped_resource_columns.setdefault(active, []).append(
+                    int(column_offset)
+                )
+            z_terms = []
+            resource_group_order: list[int] = []
+            for active, offsets in grouped_resource_columns.items():
+                columns = non_mux_columns[np.asarray(offsets, dtype=int)]
+                resource_group_order.extend(offsets)
+                z_terms.append(
+                    cp.sum(z[np.ix_(np.asarray(active, dtype=int), columns)], axis=0)
+                    if active
+                    else np.zeros(len(columns), dtype=float)
+                )
+            grouped_lhs = cp.hstack(z_terms)
+            inverse = np.argsort(np.asarray(resource_group_order, dtype=int))
+            constraint = grouped_lhs[np.asarray(inverse, dtype=int)] <= 1.0 - fixed_count
             constraints.append(constraint)
             routing_constraints.append(
                 (
@@ -741,16 +773,27 @@ class NativeRelaxationSolver:
                         edge_coefficients[row_offset, edge_column] = 0.0
                 if any(key in fixed for key in clique):
                     edge_fixed_count[edge_column] = 1.0
-            edge_constraint = (
-                cp.sum(
-                    cp.multiply(
-                        edge_coefficients,
-                        w[np.ix_(rows_in_clique, np.arange(e_count))],
-                    ),
-                    axis=0,
+            grouped_edge_columns: dict[tuple[int, ...], list[int]] = {}
+            for edge_column, edge in enumerate(native_edges):
+                fixed = fixed_edge_sources[edge]
+                active = tuple(
+                    row for row, key in zip(rows_in_clique, clique)
+                    if key not in fixed
                 )
-                <= 1.0 - edge_fixed_count
-            )
+                grouped_edge_columns.setdefault(active, []).append(edge_column)
+            w_terms = []
+            edge_group_order: list[int] = []
+            for active, columns_list in grouped_edge_columns.items():
+                columns = np.asarray(columns_list, dtype=int)
+                edge_group_order.extend(columns_list)
+                w_terms.append(
+                    cp.sum(w[np.ix_(np.asarray(active, dtype=int), columns)], axis=0)
+                    if active
+                    else np.zeros(len(columns), dtype=float)
+                )
+            grouped_edge_lhs = cp.hstack(w_terms)
+            edge_inverse = np.argsort(np.asarray(edge_group_order, dtype=int))
+            edge_constraint = grouped_edge_lhs[np.asarray(edge_inverse, dtype=int)] <= 1.0 - edge_fixed_count
             constraints.append(edge_constraint)
             routing_constraints.append(
                 (
@@ -995,7 +1038,14 @@ class NativeRelaxationSolver:
         source: bool,
         resource_index: Mapping[str, int],
     ) -> Any:
-        vector: list[Any] = [0.0] * len(resource_index)
+        """Return a sparse affine endpoint distribution.
+
+        Native MRRGs contain thousands of port resources.  Building a Python
+        list of scalar CVXPY expressions for every endpoint creates a very
+        large expression DAG dominated by zeros.  A sparse candidate-to-port
+        incidence matrix is mathematically identical and lets CVXPY retain a
+        sparse coefficient matrix through canonicalization.
+        """
         if node_key in state.placements:
             placement = state.placements[node_key]
             rid = (
@@ -1003,8 +1053,12 @@ class NativeRelaxationSolver:
                 if source
                 else problem.operand_port(placement, edge_type)
             )
+            vector = np.zeros(len(resource_index), dtype=float)
             vector[resource_index[rid]] = 1.0
-            return np.asarray(vector, dtype=float)
+            return vector
+        rows: list[int] = []
+        columns: list[int] = []
+        values: list[float] = []
         for candidate_index in candidate_by_operation[node_key]:
             placement = candidates[candidate_index]
             rid = (
@@ -1012,9 +1066,14 @@ class NativeRelaxationSolver:
                 if source
                 else problem.operand_port(placement, edge_type)
             )
-            column = resource_index[rid]
-            vector[column] = vector[column] + x[candidate_index]
-        return cp.hstack(vector)
+            rows.append(resource_index[rid])
+            columns.append(int(candidate_index))
+            values.append(1.0)
+        matrix = sp.csr_matrix(
+            (values, (rows, columns)),
+            shape=(len(resource_index), int(x.shape[0])),
+        )
+        return matrix @ x
 
     def _run_problem(
         self,
