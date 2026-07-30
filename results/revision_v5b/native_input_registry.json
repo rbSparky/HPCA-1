@@ -1,6 +1,88 @@
 {
   "native_executable_rows": 0,
+  "rejected_manifests": [
+    {
+      "manifest": "array_add/A3_hycube8x8_recovery1/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "array_cond/A0_hycube4x4_fixed17_cluster/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "array_cond/A2_hycube4x4_mem_variant_new/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/array_cond/A2_hycube4x4_mem_variant_new/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "array_cond/A3_hycube8x8_recovery1/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "conv2/A2_hycube4x4_mem_variant_cluster_done2/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/conv2/A2_hycube4x4_mem_variant_cluster_done2/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "conv2/A2_hycube4x4_mem_variant_paper1/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/conv2/A2_hycube4x4_mem_variant_paper1/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "conv3/A2_hycube4x4_mem_variant_new/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/conv3/A2_hycube4x4_mem_variant_new/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "fir/A2_hycube4x4_mem_variant_new/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/fir/A2_hycube4x4_mem_variant_new/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "fix_fft/A3_hycube8x8_recovery1/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "mac/A2_hycube4x4_mem_variant_cluster_done2/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/mac/A2_hycube4x4_mem_variant_cluster_done2/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "mac/A2_hycube4x4_mem_variant_paper1/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/mac/A2_hycube4x4_mem_variant_paper1/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "trmm/A0_hycube4x4_fixed17_cluster/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "trmm/A0_hycube4x4_fixed17_cluster_incomplete_pull1/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    },
+    {
+      "manifest": "trmm/A2_hycube4x4_mem_variant_recovery1/manifest.env",
+      "reason": "results/revision_v5b/reference_mappings/trmm/A2_hycube4x4_mem_variant_recovery1/manifest.env: missing fields ['X', 'Y', 'INITIAL_II', 'PE_TYPE', 'METHOD']"
+    },
+    {
+      "manifest": "trmm/A3_hycube8x8_recovery1/manifest.env",
+      "reason": "missing canonical dfg/mrrg/mapping JSON"
+    }
+  ],
   "rows": [
+    {
+      "canonical_json": {
+        "dfg": "c7546a798a3725dd82cb9bc350ed2de018106ca6a3687bc277d8178239246acf",
+        "mapping": "fd7517e097f2f3958e1750785fcccea88defe86fe200ae2632780ddf637a8f99",
+        "mrrg": "bbc8aacb804066ca00509f7f9764eaf022fafcdd301bab938ba0649ade25c217"
+      },
+      "ii": 4,
+      "manifest": "array_add/A3_hycube8x8_cluster_done2/manifest.env",
+      "native_architecture": "json_arch/hycube_8x8.json",
+      "native_architecture_sha256": "0c484b252636e2d825a18bef6ead2ec469062066ddcd6a188104f63d94330e9c",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "applications/array_add/array_add_INNERMOST_LN1_PartPred_DFG.xml",
+      "native_dfg_sha256": "27e75d7c19c1da91395429df25521eaa75a0592dc36163ef539420ae83de11ef",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "array_add/A3_hycube8x8_cluster_done2",
+      "staged_architecture": "",
+      "staged_dfg": "",
+      "staged_inputs_available": false
+    },
     {
       "canonical_json": {
         "dfg": "eaa19dfd16baf448b338110b41333d0ca9082ffeae795002344849b25dbc75d7",
@@ -16,7 +98,30 @@
       "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/array_cond/array_cond_PartPredDFG.xml",
       "native_dfg_sha256": "8231992e869959fa3a356b0e1907c4effbde6d69b5582a84b68c1cd44a9bcff5",
       "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
-      "pair": "array_cond/A1_stdnoc4x4_recovery1"
+      "pair": "array_cond/A1_stdnoc4x4_recovery1",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6.json",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/8231992e869959fa3a356b0e1907c4effbde6d69b5582a84b68c1cd44a9bcff5.xml",
+      "staged_inputs_available": true
+    },
+    {
+      "canonical_json": {
+        "dfg": "173912614fce84fc57ea0c2ad9aef45bc60e71454708fe53474a4beff106a588",
+        "mapping": "5742b4584e3f6a6becea1d160da4985b44be884348baa2bc6d89aa7c16003996",
+        "mrrg": "b7c1c9202ce3cfd73ecd1f26bed524552d11ba9f07a017b349155c2839aeb7c7"
+      },
+      "ii": 4,
+      "manifest": "array_cond/A3_hycube8x8_cluster_done2/manifest.env",
+      "native_architecture": "json_arch/hycube_8x8.json",
+      "native_architecture_sha256": "0c484b252636e2d825a18bef6ead2ec469062066ddcd6a188104f63d94330e9c",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/array_cond/array_cond_PartPredDFG.xml",
+      "native_dfg_sha256": "8231992e869959fa3a356b0e1907c4effbde6d69b5582a84b68c1cd44a9bcff5",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "array_cond/A3_hycube8x8_cluster_done2",
+      "staged_architecture": "",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/8231992e869959fa3a356b0e1907c4effbde6d69b5582a84b68c1cd44a9bcff5.xml",
+      "staged_inputs_available": false
     },
     {
       "canonical_json": {
@@ -33,7 +138,30 @@
       "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/paper_dfg_v1_20260729/conv2/conv2_PartPredDFG.xml",
       "native_dfg_sha256": "95e13d7481e2a7b4b41c4c21d1b72aa62e5387c2cd70883118d039815c53637b",
       "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed18-sa-gcc7-9aac743390d6",
-      "pair": "conv2/A1_stdnoc4x4_paper1"
+      "pair": "conv2/A1_stdnoc4x4_paper1",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6.json",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/95e13d7481e2a7b4b41c4c21d1b72aa62e5387c2cd70883118d039815c53637b.xml",
+      "staged_inputs_available": true
+    },
+    {
+      "canonical_json": {
+        "dfg": "b9fcfb87e356b7439a25492152a7b62de2db9026052a8129c4dc708ce533f787",
+        "mapping": "dc5b54d867cc41624b01456bc4efe9cec03d6cfb9d19b8c216fa0b020c734aca",
+        "mrrg": "f8c85cb28837ca59766cfd795475d15325171170ab5f4a0bc45ee9aeada61aa2"
+      },
+      "ii": 2,
+      "manifest": "fix_fft/A3_hycube8x8_cluster_done2/manifest.env",
+      "native_architecture": "json_arch/hycube_8x8.json",
+      "native_architecture_sha256": "0c484b252636e2d825a18bef6ead2ec469062066ddcd6a188104f63d94330e9c",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "applications/fix_fft_npb/fix_fft_INNERMOST_LN111_PartPred_DFG.xml",
+      "native_dfg_sha256": "24d578cad1da59cddfefb9d93b22be06dcde15e23e452564e50613af77a89912",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "fix_fft/A3_hycube8x8_cluster_done2",
+      "staged_architecture": "",
+      "staged_dfg": "",
+      "staged_inputs_available": false
     },
     {
       "canonical_json": {
@@ -50,7 +178,10 @@
       "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/hpcg/hpcg_PartPredDFG.xml",
       "native_dfg_sha256": "c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b",
       "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
-      "pair": "hpcg/A0_hycube4x4_recovery1"
+      "pair": "hpcg/A0_hycube4x4_recovery1",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/6364da130d2267c5ca40e3bd8b30a372998a6c1fb0bae7e2b80d47dd7c255cbe.json",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b.xml",
+      "staged_inputs_available": true
     },
     {
       "canonical_json": {
@@ -67,7 +198,30 @@
       "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/hpcg/hpcg_PartPredDFG.xml",
       "native_dfg_sha256": "c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b",
       "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
-      "pair": "hpcg/A1_stdnoc4x4_new"
+      "pair": "hpcg/A1_stdnoc4x4_new",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6.json",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/c097c3ed3d60d32893055373e32d49c10877c285e1e563906282de0167b3245b.xml",
+      "staged_inputs_available": true
+    },
+    {
+      "canonical_json": {
+        "dfg": "2d25849218f286a6a284e3a70fd80c4bf5163f2eb737884e97aa0ebf723dd638",
+        "mapping": "68709c7690907ceedc845bf81ec21f1fbf0514aae5f33d207dffc6f0eea54316",
+        "mrrg": "9cb2ff21ca5ff5ea5d73047f89ebbc07b060ff0f1a087f1656990b9cb75fd760"
+      },
+      "ii": 6,
+      "manifest": "mac/A1_stdnoc4x4_cluster_done2/manifest.env",
+      "native_architecture": "json_arch/stdnoc.json",
+      "native_architecture_sha256": "d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6",
+      "native_available": false,
+      "native_binary_sha256": "9aac743390d6d242618b6a0897a9936becf28876d1e01e88ec1fdf7666f2c7ae",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/paper_dfg_v1_20260729/mac/mac_PartPredDFG.xml",
+      "native_dfg_sha256": "59270ee7b792610ff8261aa89f6bb3cea6ba5f30e29b84140ed2bd26280e9a8d",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed18-sa-gcc7-9aac743390d6",
+      "pair": "mac/A1_stdnoc4x4_cluster_done2",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6.json",
+      "staged_dfg": "",
+      "staged_inputs_available": false
     },
     {
       "canonical_json": {
@@ -84,8 +238,33 @@
       "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/trmm/trmm_PartPredDFG.xml",
       "native_dfg_sha256": "562e3b19507f0aa3a0ef3383f51925f41bf05691f27703b279836f1d57fd99b5",
       "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
-      "pair": "trmm/A1_stdnoc4x4_recovery1"
+      "pair": "trmm/A1_stdnoc4x4_recovery1",
+      "staged_architecture": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/architecture/d50149732e080b2e18e7150035cb0c475fe08f2fde99dc381bca0083f42875a6.json",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/562e3b19507f0aa3a0ef3383f51925f41bf05691f27703b279836f1d57fd99b5.xml",
+      "staged_inputs_available": true
+    },
+    {
+      "canonical_json": {
+        "dfg": "f3cc79636fd37928285f54f1708a38b82a053a6ceda18b9a189f7b4aa9450f28",
+        "mapping": "c64c422cd567cc9e12cc1b90a0e9822ea383ef27043fd262dc509ca302367951",
+        "mrrg": "96ee4994bb669fce2530bb9c83aed1615d5e2f84502c19ca66b789937e35016b"
+      },
+      "ii": 4,
+      "manifest": "trmm/A3_hycube8x8_cluster_done2/manifest.env",
+      "native_architecture": "json_arch/hycube_8x8.json",
+      "native_architecture_sha256": "0c484b252636e2d825a18bef6ead2ec469062066ddcd6a188104f63d94330e9c",
+      "native_available": false,
+      "native_binary_sha256": "2b49863713eb22523c2331058e761e00b6240365d749a6c01f86fa789436ec6f",
+      "native_dfg": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_inputs/pilot_dfg_fixed_20260729_recovery1/trmm/trmm_PartPredDFG.xml",
+      "native_dfg_sha256": "562e3b19507f0aa3a0ef3383f51925f41bf05691f27703b279836f1d57fd99b5",
+      "native_toolchain": "/home/Rishabh@MLL-5090/remote-work/HPCA/.cluster_toolchains/morpher-fixed17-gcc7-2b49863713eb",
+      "pair": "trmm/A3_hycube8x8_cluster_done2",
+      "staged_architecture": "",
+      "staged_dfg": "/home/rishabh/HPCA/results/revision_v5b/native_inputs/dfg/562e3b19507f0aa3a0ef3383f51925f41bf05691f27703b279836f1d57fd99b5.xml",
+      "staged_inputs_available": false
     }
   ],
-  "schema": "flowadvantage_native_input_registry_v1"
+  "schema": "flowadvantage_native_input_registry_v1",
+  "staged_input_rows": 5,
+  "staged_root": "/home/rishabh/HPCA/results/revision_v5b/native_inputs"
 }
