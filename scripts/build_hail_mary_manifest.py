@@ -171,8 +171,8 @@ def main() -> int:
                     mrrg = pair / "ii0" / "mrrg.json"
                     row = row_base(
                         kernel=kernel, architecture=architecture, method=method,
-                        seed=0, budget=600, timeout=600, dfg=Path(remote_problem(ii)) / "dfg.json",
-                        mrrg=Path(remote_problem(ii)) / "mrrg.json", native_dfg=Path(args.remote_root) / "native_inputs/dfg" / f"{kernel}.xml",
+                        seed=0, budget=600, timeout=600, dfg=Path(remote_problem(0)) / "dfg.json",
+                        mrrg=Path(remote_problem(0)) / "mrrg.json", native_dfg=Path(args.remote_root) / "native_inputs/dfg" / f"{kernel}.xml",
                         native_arch=Path(str(native_arch).replace(str(args.toolchain), args.toolchain)), mapper=args.mapper,
                         toolchain=args.toolchain, checkpoint=args.checkpoint,
                         source_commit=args.source_commit, source_hash=source_hash, delta=0,
