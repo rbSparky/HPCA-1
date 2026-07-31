@@ -19,7 +19,7 @@ or phase-number lookup table.
 from __future__ import annotations
 
 from collections import OrderedDict, defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -110,7 +110,10 @@ class NativeParentRelaxationContext:
     ) -> None:
         expected_state = native_state_hash(state)
         failures = []
-        if self.schema != PARENT_CONTEXT_SCHEMA:
+        if self.schema not in {
+            PARENT_CONTEXT_SCHEMA,
+            "flowadvantage_native_static_root_parent_v1",
+        }:
             failures.append(f"schema={self.schema!r}")
         if self.state_hash != expected_state:
             failures.append("state hash")
@@ -246,6 +249,79 @@ class NativeRelaxationParentContextProvider:
         )
         context.validate(problem, state)
         return context
+
+
+class StaticRootParentContextProvider:
+    """Reuse one exact root relaxation for every successor state.
+
+    This is an explicit deployment variant, not a hidden fallback: the root
+    context is solved once from the genuinely empty state and its duals are
+    then held fixed while the discrete mapper advances.  The returned context
+    receives the current state's hash so downstream feature/schema validation
+    remains strict while the provenance field records the static-root mode.
+    """
+
+    def __init__(self, solver: Any, problem: NativeMorpherProblem) -> None:
+        if not callable(getattr(solver, "solve", None)):
+            raise TypeError("static-root provider requires solve(problem, state)")
+        self.solver = solver
+        self.problem = problem
+        self.root_context: NativeParentRelaxationContext | None = None
+        self.calls = 0
+        self.cache_hits = 0
+        self.request_wall_seconds = 0.0
+        self.cache_read_seconds = 0.0
+        self.logical_solve_seconds = 0.0
+        self.canonicalization_seconds = 0.0
+
+    def parent_context(
+        self, problem: NativeMorpherProblem, state: NativeMappingState
+    ) -> NativeParentRelaxationContext:
+        if problem is not self.problem:
+            raise ValueError("static-root context provider bound to another problem")
+        self.calls += 1
+        started = time.perf_counter()
+        if self.root_context is None:
+            root = NativeMappingState(problem)
+            result = self.solver.solve(problem, root)
+            elapsed = time.perf_counter() - started
+            self.request_wall_seconds += elapsed
+            self.logical_solve_seconds += float(getattr(result, "solve_seconds", 0.0))
+            self.canonicalization_seconds += float(
+                getattr(result, "canonicalization_seconds", 0.0)
+            )
+            if not bool(getattr(result, "feasible", False)):
+                raise NativeProposalCompatibilityError(
+                    "static root native relaxation is not feasible: "
+                    f"status={getattr(result, 'status', 'unknown')!r}, "
+                    f"error={getattr(result, 'error', '')!r}"
+                )
+            self.root_context = NativeParentRelaxationContext(
+                state_hash=native_state_hash(root),
+                architecture_hash=str(problem.mrrg.get("architecture_hash")),
+                dfg_hash=str(problem.dfg.get("dfg_hash")),
+                ii=problem.ii,
+                objective=float(result.objective),
+                routing_duals=dict(result.routing_resource_duals),
+                compute_duals=dict(result.compute_duals),
+                capacity_slacks=dict(result.capacity_slacks),
+                fractional_flow_concentration=float(
+                    result.fractional_flow_concentration
+                ),
+                solver_status="static_root_" + str(result.status),
+            )
+        else:
+            self.cache_hits += 1
+            self.cache_read_seconds += time.perf_counter() - started
+        current = replace(
+            self.root_context,
+            state_hash=native_state_hash(state),
+            schema="flowadvantage_native_static_root_parent_v1",
+        )
+        # Validate semantic IDs and finiteness while intentionally allowing the
+        # static-root schema.  State hash is rewritten above by design.
+        current.validate(problem, state)
+        return current
 
 
 class NativeDualLinearActionScorer(NativeActionScorer):
@@ -1572,6 +1648,7 @@ __all__ = [
     "NativeCompatibilityReport",
     "NativeParentContextProvider",
     "NativeRelaxationParentContextProvider",
+    "StaticRootParentContextProvider",
     "NativeParentRelaxationContext",
     "NativeProposalCompatibilityError",
     "NativeNoParentUnavailable",

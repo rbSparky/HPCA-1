@@ -159,7 +159,10 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
             raise FileNotFoundError(f"checkpoint does not exist: {checkpoint}")
         row["checkpoint_path"] = str(checkpoint)
         row["checkpoint_hash"] = sha256_file(checkpoint)
-    if row.get("method") in {"flow_proposal", "flow_top4", "full_relaxed_lookahead"}:
+    if row.get("method") in {
+        "flow_proposal", "flow_top4", "full_relaxed_lookahead",
+        "flow_proposal_static", "flow_top4_static",
+    }:
         if not row.get("checkpoint_path"):
             raise ValueError("FlowAdvantage work items require checkpoint_path")
     if row.get("method") in {
@@ -168,6 +171,9 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
         "flow_proposal",
         "flow_top4",
         "full_relaxed_lookahead",
+        "dual_linear_static",
+        "flow_proposal_static",
+        "flow_top4_static",
     }:
         if row.get("initialization_policy") != "deterministic_length_prefix":
             raise ValueError(
@@ -202,6 +208,9 @@ def freeze_job(job: dict[str, Any], output: Path) -> dict[str, Any]:
         "flow_proposal",
         "flow_top4",
         "full_relaxed_lookahead",
+        "dual_linear_static",
+        "flow_proposal_static",
+        "flow_top4_static",
     }
     if row["method"] in native_methods or native_dfg_value:
         mapper = _mapper_path(row)

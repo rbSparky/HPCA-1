@@ -64,6 +64,7 @@ SA_METHODS = frozenset({"native_simulated_annealing", "simulated_annealing"})
 # than silently mapped to a proxy.
 FLOW_METHODS = frozenset({
     "dual_linear", "flow_proposal", "flow_top4", "full_relaxed_lookahead",
+    "dual_linear_static", "flow_proposal_static", "flow_top4_static",
 })
 UNSUPPORTED_METHODS = frozenset({
     # Long-form canonical methods are wired below.  These legacy aliases are
@@ -649,9 +650,12 @@ def _native_search(
         FrozenFlowAdvantageNativeProposalScorer,
         NativeDualLinearActionScorer,
         NativeRelaxationParentContextProvider,
+        StaticRootParentContextProvider,
     )
 
     method = str(spec["method"])
+    static_parent = method.endswith("_static")
+    base_method = method[:-7] if static_parent else method
     solver = None
     scorer: NativeActionScorer
     timing_provider = None
@@ -682,8 +686,12 @@ def _native_search(
                 or "results/revision_v5b/cache/native_relaxation"
             ),
         )
-        parent_provider = NativeRelaxationParentContextProvider(solver)
-        if method == "dual_linear":
+        parent_provider = (
+            StaticRootParentContextProvider(solver, problem)
+            if static_parent
+            else NativeRelaxationParentContextProvider(solver)
+        )
+        if base_method == "dual_linear":
             scorer = NativeDualLinearActionScorer(parent_provider)
             timing_provider = None
         else:
@@ -704,14 +712,14 @@ def _native_search(
                 device=spec.get("device"),
             )
             timing_provider = proposal
-            if method == "flow_proposal":
+            if base_method == "flow_proposal":
                 scorer = proposal
             else:
                 child_evaluator = NativeExactChildEvaluator(
                     solver,
                     parallelism=int(spec.get("child_parallelism") or 1),
                 )
-                if method == "flow_top4":
+                if base_method == "flow_top4":
                     scorer = TopKExactRerankScorer(proposal, child_evaluator, k=4)
                 elif method == "full_relaxed_lookahead":
                     class _FullExactScorer:
