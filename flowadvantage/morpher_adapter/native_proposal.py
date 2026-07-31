@@ -180,6 +180,39 @@ class NativeParentRelaxationContext:
         }
         return _sha_json(payload)
 
+    def validate_state_binding(
+        self,
+        problem: NativeMorpherProblem,
+        state: NativeMappingState,
+    ) -> None:
+        """Validate only the state-dependent binding of an immutable context.
+
+        Static-root deployment deliberately reuses the same solver context for
+        every successor.  Re-running the full ID/finite-value audit over all
+        routing duals and slacks for every action is both redundant and
+        quadratic in mapper time.  The root context is fully validated once;
+        successor calls need only verify schema, state/graph hashes, II, and
+        objective finiteness.  The immutable dictionaries are copied through
+        ``dataclasses.replace`` and cannot be mutated by the scorer.
+        """
+        failures = []
+        if self.schema != "flowadvantage_native_static_root_parent_v1":
+            failures.append(f"schema={self.schema!r}")
+        if self.state_hash != native_state_hash(state):
+            failures.append("state hash")
+        if self.architecture_hash != str(problem.mrrg.get("architecture_hash")):
+            failures.append("architecture hash")
+        if self.dfg_hash != str(problem.dfg.get("dfg_hash")):
+            failures.append("DFG hash")
+        if self.ii != problem.ii:
+            failures.append("II")
+        if not math.isfinite(float(self.objective)):
+            failures.append("objective")
+        if failures:
+            raise NativeProposalCompatibilityError(
+                "invalid static-root state binding: " + ", ".join(failures)
+            )
+
 
 @runtime_checkable
 class NativeParentContextProvider(Protocol):
@@ -314,6 +347,9 @@ class StaticRootParentContextProvider:
                 ),
                 solver_status="static_root_" + str(result.status),
             )
+            # Full semantic validation is paid exactly once for the immutable
+            # root dual/slack dictionaries.
+            self.root_context.validate(problem, root)
         else:
             self.cache_hits += 1
             self.cache_read_seconds += time.perf_counter() - started
@@ -322,9 +358,9 @@ class StaticRootParentContextProvider:
             state_hash=native_state_hash(state),
             schema="flowadvantage_native_static_root_parent_v1",
         )
-        # Validate semantic IDs and finiteness while intentionally allowing the
-        # static-root schema.  State hash is rewritten above by design.
-        current.validate(problem, state)
+        # The dictionaries were fully validated above and are immutable for
+        # this provider; bind only the successor state in O(1) time.
+        current.validate_state_binding(problem, state)
         return current
 
 
