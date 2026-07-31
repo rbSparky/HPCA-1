@@ -36,3 +36,10 @@ the exported schedule contract and dominates the root relaxation size. The
 general library default remains unchanged for callers that need padding; this
 pilot-only interval choice changes neither the native legality checker nor the
 relaxation objective, and is kept in the immutable manifest/config hash.
+
+The pilot also permits an explicit one-period fallback only when the zero-pad
+interval proves that a dependency has no legal temporal corridor. This avoids
+declaring a structurally feasible Morpher state infeasible while retaining the
+fast zero-pad path for cases where the exported ASAP/ALAP interval is complete.
+Fallback use is counted per work item (`schedule_padding_fallbacks`) and is not
+silently merged with the zero-pad timing configuration.

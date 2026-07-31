@@ -114,6 +114,7 @@ def row_base(
         # which creates native placement variables outside the exported
         # schedule contract and dominates root relaxation cost.
         "relaxation_extra_ii_periods": 0,
+        "relaxation_fallback_extra_ii_periods": 1,
         "relaxation_timeout": 120.0,
         "reachable_edge_pruning": True,
         "device": "cpu",

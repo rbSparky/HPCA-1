@@ -618,6 +618,9 @@ def _native_search(
             NativeRelaxationConfig(
                 tau=_optional_float(spec.get("relaxation_tau"), 1e-3),
                 extra_ii_periods=int(spec.get("relaxation_extra_ii_periods") or 0),
+                fallback_extra_ii_periods=int(
+                    spec.get("relaxation_fallback_extra_ii_periods") or 0
+                ),
                 max_solve_seconds=_optional_float(
                     spec.get("relaxation_timeout"), 120.0
                 ),
@@ -845,6 +848,9 @@ def _native_search(
     payload["relaxation_seconds"] = (
         payload["parent_relaxation_seconds"]
         + float(payload.get("child_relaxation_seconds", 0.0))
+    )
+    payload["schedule_padding_fallbacks"] = int(
+        getattr(solver, "schedule_padding_fallbacks", 0)
     )
     if result.mapping is not None:
         artifact_directory.mkdir(parents=True)

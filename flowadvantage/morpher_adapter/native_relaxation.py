@@ -47,6 +47,7 @@ class NativeRelaxationConfig:
 
     tau: float = 1e-3
     extra_ii_periods: int = 1
+    fallback_extra_ii_periods: int = 0
     solver_primary: str = "CLARABEL"
     solver_fallback: str = "OSQP"
     max_threads: int = 1
@@ -61,6 +62,8 @@ class NativeRelaxationConfig:
             raise ValueError("tau must be positive")
         if self.extra_ii_periods < 0:
             raise ValueError("extra_ii_periods must be nonnegative")
+        if self.fallback_extra_ii_periods < 0:
+            raise ValueError("fallback_extra_ii_periods must be nonnegative")
         if self.max_solve_seconds <= 0:
             raise ValueError("max_solve_seconds must be positive")
         if self.max_threads <= 0:
@@ -221,6 +224,7 @@ class NativeRelaxationSolver:
         self.solve_calls = 0
         self.cache_hits = 0
         self.cache_misses = 0
+        self.schedule_padding_fallbacks = 0
 
     def _problem_index(self, problem: NativeMorpherProblem) -> _NativeProblemIndex:
         identity = id(problem)
@@ -278,6 +282,37 @@ class NativeRelaxationSolver:
             return cached
         self.cache_misses += 1
         result = self._solve_uncached(problem, state, key)
+        # Some Morpher kernels expose a finite ASAP/ALAP window whose legal
+        # route corridor is empty at the zero-padding interval, while the
+        # native mapper legitimately uses one additional modulo period for a
+        # long cross-PE dependency.  Try the explicitly configured expanded
+        # interval only for that structural infeasibility.  This is not a
+        # heuristic relaxation: it is the exact original model's feasible
+        # interval, reached lazily after the smaller exact interval proves it
+        # has no temporal corridor.
+        if (
+            result.status == "infeasible"
+            and self.config.fallback_extra_ii_periods
+            and "no legal temporal native route edges" in result.error
+            and self.config.fallback_extra_ii_periods > self.config.extra_ii_periods
+        ):
+            fallback_config = NativeRelaxationConfig(
+                **{
+                    **asdict(self.config),
+                    "extra_ii_periods": self.config.fallback_extra_ii_periods,
+                    "fallback_extra_ii_periods": 0,
+                }
+            )
+            fallback_solver = NativeRelaxationSolver(
+                fallback_config, cache_dir=self.cache_dir
+            )
+            fallback_result = fallback_solver.solve(problem, state)
+            self.schedule_padding_fallbacks += 1
+            fallback_result.error = (
+                f"{fallback_result.error}; schedule_padding_fallback="
+                f"{self.config.fallback_extra_ii_periods}"
+            ).strip("; ")
+            result = fallback_result
         self._memory_cache[key] = result
         if self.cache_dir is not None:
             self._write_cache(key, result)
