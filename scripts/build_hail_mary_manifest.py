@@ -109,6 +109,11 @@ def row_base(
         "checkpoint_hash": sha256(checkpoint) if checkpoint else "",
         "relaxation_cache_dir": "",
         "relaxation_tau": 0.001,
+        # Morpher exports finite ASAP/ALAP latency bounds.  Keep the pilot
+        # interval explicit instead of adding artificial II-period padding,
+        # which creates native placement variables outside the exported
+        # schedule contract and dominates root relaxation cost.
+        "relaxation_extra_ii_periods": 0,
         "relaxation_timeout": 120.0,
         "reachable_edge_pruning": True,
         "device": "cpu",

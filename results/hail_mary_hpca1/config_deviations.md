@@ -26,3 +26,13 @@ distinct from valid mapping failure. No gate or threshold is changed here.
 | Native relaxation formulation | dense CVXPY masks/max epigraphs | sparse indexed capacity operators and paired outgoing/incoming inequalities | Exact algebraic equivalence; verified by native relaxation tests and documented in the runtime log. |
 | Problem export workers | 2 | 4 per export wave | Host has 8 CPUs and each native export is single-threaded; no semantic change. |
 | Export scheduling | all pairs in one wave | resumable waves with selective kernel/architecture filters | Prevents a known incompatible memory-architecture cell from blocking unrelated exports; unsupported cells are retained with stderr. |
+
+### Native schedule interval padding
+
+The restarted native pilot sets `relaxation_extra_ii_periods=0` explicitly in
+each immutable work item. Morpher exports finite ASAP/ALAP latency bounds, so
+adding an artificial extra II period only creates placement variables outside
+the exported schedule contract and dominates the root relaxation size. The
+general library default remains unchanged for callers that need padding; this
+pilot-only interval choice changes neither the native legality checker nor the
+relaxation objective, and is kept in the immutable manifest/config hash.

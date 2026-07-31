@@ -617,6 +617,7 @@ def _native_search(
         solver = NativeRelaxationSolver(
             NativeRelaxationConfig(
                 tau=_optional_float(spec.get("relaxation_tau"), 1e-3),
+                extra_ii_periods=int(spec.get("relaxation_extra_ii_periods") or 0),
                 max_solve_seconds=_optional_float(
                     spec.get("relaxation_timeout"), 120.0
                 ),
