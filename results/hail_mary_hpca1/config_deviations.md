@@ -72,10 +72,23 @@ native legality. Strict `route_match` remains recorded as false in validation;
 `native_route_canonicalized` is reported separately. No such row is presented
 as byte-for-byte route equality.
 
-## Unsupported A2 rest-kernel exports
+## A2 rest-kernel memory-layout repair
 
-Native export was attempted for `fix_fft`, `gemm_nt`, `hpcg`, and `trmm` on
-`A2_hycube4x4_mem_variant`. Morpher aborts in
-`PathFinderMapper::UpdateVariableBaseAddr` because these DFGs do not contain
-the required memory `base_pointer_name` metadata. The cells remain explicit
-unsupported/infrastructure rows; no synthetic A2 MRRG is fabricated.
+The first native export attempt for `fix_fft`, `gemm_nt`, `hpcg`, and `trmm` on
+`A2_hycube4x4_mem_variant` aborted in
+`PathFinderMapper::UpdateVariableBaseAddr`. The DFGs did contain
+`BasePointerName` tags; the failure was the stronger native contract that
+*every* pointer name must also occur in the selected architecture's
+`SPM_B0_WRAPPER`/`SPM_B1_WRAPPER.DATA_LAYOUT`. The historical array_add JSON
+only declared `A`, `B`, `C`, `loopstart`, and `loopend`.
+
+This was repaired rather than marked unsupported. The committed
+`scripts/repair_a2_data_layout.py` extracts the native pointer names and byte
+sizes, preserves the validated A2 topology and loop sentinels, and allocates
+missing objects deterministically and without overlap across the two existing
+2048-byte scratchpad banks. Repaired layouts and exports are in
+`results/hail_mary_hpca1/a2_repaired_arch/` and
+`results/hail_mary_hpca1/a2_repaired_exports/`; all four exports pass the
+native Morpher problem-export command at their actual lower-bound II. The
+original abort logs remain preserved as failure provenance, while the clean
+queue uses the repaired per-kernel native architecture paths.
