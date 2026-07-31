@@ -103,6 +103,8 @@ MANIFEST_FIELDS = (
     "anchor_operations",
     "relaxation_cache_dir",
     "relaxation_tau",
+    "relaxation_extra_ii_periods",
+    "relaxation_fallback_extra_ii_periods",
     "relaxation_timeout",
     "reachable_edge_pruning",
     "device",
@@ -152,6 +154,8 @@ SEMANTIC_FIELDS = (
     "anchor_operations",
     "relaxation_cache_dir",
     "relaxation_tau",
+    "relaxation_extra_ii_periods",
+    "relaxation_fallback_extra_ii_periods",
     "relaxation_timeout",
     "reachable_edge_pruning",
     "device",
@@ -180,6 +184,8 @@ _SEMANTIC_FLOAT_FIELDS = frozenset(
     {
         "initialization_depth_fraction",
         "relaxation_tau",
+        "relaxation_extra_ii_periods",
+        "relaxation_fallback_extra_ii_periods",
         "relaxation_timeout",
     }
 )
