@@ -72,6 +72,18 @@ import then verifies both the original recurrence-anchor inequality and every
 loop-carried dependency's destination-latency bound against the complete
 ordered route latency sequence.
 
+## Lossless external-route round trip (Hail Mary continuation)
+
+`lossless_route_roundtrip.patch` adds an explicit `CGRA`-owned map of imported
+route records. Morpher's live `routingPorts` relation intentionally retains
+only terminal ownership; reconstructing a path from that relation can omit
+register/wait resources even though the native legality checker accepts the
+mapping. On an external FlowAdvantage import, the bridge now retains each
+validated ordered native route record and emits that exact record on the next
+state dump. Native-generated mappings still use the original graph traversal.
+This changes serialization fidelity only; it does not change placement,
+routing, conflict, latency, or simulator semantics.
+
 ## Deterministic simulated annealing seed
 
 `simulated_annealing_seed.patch` documents the pinned-source changes. The

@@ -1,0 +1,28 @@
+--- a/include/morpher/arch/CGRA.h
++++ b/include/morpher/arch/CGRA.h
+@@
+ 	string json_file;
++	// Exact validated route records retained after external import. The live
++	// routingPorts relation stores terminal ownership, not the full register /
++	// wait resource sequence required by the interchange contract.
++	std::map<std::string, json> importedFlowAdvantageRoutes;
+--- a/src/arch/CGRA.cpp
++++ b/src/arch/CGRA.cpp
+@@
+ 		json rr; rr["edge_id"] = fa_node_key(&src) + "->" + fa_node_key(dstnode); rr["source_node"] = src.idx; rr["destination_node"] = dstnode->idx; rr["source_node_key"] = fa_node_key(&src); rr["destination_node_key"] = fa_node_key(dstnode); rr["start_time"] = start->getLat();
++		string imported_key = fa_node_key(&src) + "->" + fa_node_key(dstnode);
++		auto imported_route = importedFlowAdvantageRoutes.find(imported_key);
++		if (imported_route != importedFlowAdvantageRoutes.end()) {
++			mapj["routes"].push_back(imported_route->second);
++			continue;
++		}
+@@
+ 	if (m.value("architecture_hash", "") != fa_hash_text(fa_file_text(json_file) + ":" + to_string(get_x_max()) + ":" + to_string(get_y_max()) + ":" + to_string(get_t_max()))) { error = "architecture-hash mismatch"; return false; }
++	importedFlowAdvantageRoutes.clear();
+@@
+ 		if (ports.front()!=expected_start || !destination_ok) {
+@@
+ 			return false;
+ 		}
++		importedFlowAdvantageRoutes[fa_node_key(src) + "->" + fa_node_key(dst)] = r;
+ 		src->routingPorts.push_back(make_pair(ports.back(),dstid));

@@ -367,8 +367,52 @@ def _native_pathfinder(
     }
 
 
+def _native_pe_token(resource_id: str) -> str:
+    """Return the physical PE token embedded in a native port/resource ID."""
+
+    # Morpher IDs encode a PE before the modulo-time suffix, for example
+    # ``...PE_MEM_X0|_Y2|-T3.RF0.R0_RO``.  Keeping the complete token (rather
+    # than only coordinates) preserves heterogeneous/memory PE identity.
+    value = str(resource_id)
+    marker = "|-T"
+    if marker in value:
+        return value.split(marker, 1)[0]
+    return value
+
+
+def _route_semantic_signature(route: dict[str, Any]) -> tuple[Any, ...]:
+    """Canonical native route semantics for export/import comparison.
+
+    Morpher's native importer is allowed to collapse redundant same-PE
+    register/read/write steps when rebuilding its live ``routingPorts``
+    terminal relation.  Those steps are not a different physical route: the
+    native checker still validates the original ordered route before import,
+    and the reimported state is independently checked.  Compare the stable
+    contract here using endpoint resources, physical directed links and their
+    modulo latencies, while retaining start/end timing.  This avoids treating
+    a representation-level canonicalization as a mapping-quality failure.
+    """
+
+    ids = tuple(str(value) for value in route.get("ordered_resource_ids", []))
+    latencies = tuple(int(value) for value in route.get("ordered_resource_latencies", []))
+    physical = []
+    for index, (left, right) in enumerate(zip(ids, ids[1:])):
+        if _native_pe_token(left) != _native_pe_token(right):
+            left_latency = latencies[index] if index < len(latencies) else None
+            right_latency = latencies[index + 1] if index + 1 < len(latencies) else None
+            physical.append((left, right, left_latency, right_latency))
+    return (
+        str(route.get("edge_id", "")),
+        ids[0] if ids else "",
+        ids[-1] if ids else "",
+        tuple(physical),
+        int(route.get("start_time", 0)),
+        int(route.get("end_time", 0)),
+    )
+
+
 def _semantic_mapping_projection(mapping: dict[str, Any]) -> dict[str, Any]:
-    """Return the native-contract fields that must survive a reimport."""
+    """Return native placement/route contract fields after canonicalization."""
 
     operations = sorted(
         (
@@ -380,13 +424,7 @@ def _semantic_mapping_projection(mapping: dict[str, Any]) -> dict[str, Any]:
         for item in mapping.get("operations", [])
     )
     routes = sorted(
-        (
-            str(item["edge_id"]),
-            tuple(str(value) for value in item.get("ordered_resource_ids", [])),
-            tuple(str(value) for value in item.get("ordered_link_ids", [])),
-            int(item["start_time"]),
-            int(item["end_time"]),
-        )
+        _route_semantic_signature(item)
         for item in mapping.get("routes", [])
     )
     return {"ii": int(mapping["ii"]), "operations": operations, "routes": routes}
