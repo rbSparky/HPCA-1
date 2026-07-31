@@ -15,6 +15,7 @@ import json
 import shutil
 import subprocess
 import time
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -60,7 +61,45 @@ def run_one(
 ) -> dict[str, object]:
     pair_out = output / kernel / architecture / f"ii{ii}"
     if pair_out.exists():
-        raise RuntimeError(f"refusing to overwrite existing export: {pair_out}")
+        complete = all(
+            (pair_out / name).is_file()
+            for name in ("problem_manifest.json", "dfg.json", "mrrg.json")
+        )
+        if not complete:
+            partial = pair_out.with_name(
+                f"{pair_out.name}.partial_{os.getpid()}"
+            )
+            pair_out.rename(partial)
+        else:
+            manifest = json.loads((pair_out / "problem_manifest.json").read_text())
+            dfg_doc = json.loads((pair_out / "dfg.json").read_text())
+            mrrg_doc = json.loads((pair_out / "mrrg.json").read_text())
+            actual_ii = int(manifest.get("ii", -1))
+            if (
+                actual_ii <= 0
+                or dfg_doc.get("ii") != actual_ii
+                or mrrg_doc.get("ii") != actual_ii
+                or manifest.get("dfg_hash") != dfg_doc.get("dfg_hash")
+                or manifest.get("architecture_hash") != mrrg_doc.get("architecture_hash")
+            ):
+                raise RuntimeError(f"invalid existing native export: {pair_out}")
+            return {
+                "kernel": kernel,
+                "architecture": architecture,
+                "ii": ii,
+                "actual_ii": actual_ii,
+                "status": "CACHED",
+                "elapsed_seconds": 0.0,
+                "dfg_hash": sha256(pair_out / "dfg.json"),
+                "mrrg_hash": sha256(pair_out / "mrrg.json"),
+                "manifest_hash": sha256(pair_out / "problem_manifest.json"),
+                "native_dfg_hash": sha256(dfg),
+                "native_architecture_ref": arch_ref,
+                "native_dfg_nodes": len(dfg_doc.get("nodes", [])),
+                "mrrg_resources": len(mrrg_doc.get("resources", [])),
+                "mrrg_edges": len(mrrg_doc.get("edges", [])),
+                "stdout": "resumed cached export",
+            }
     pair_out.parent.mkdir(parents=True, exist_ok=True)
     container_dfg = f"/work/dfg/{dfg.name}"
     container_out = f"/out/{kernel}/{architecture}/ii{ii}"
@@ -142,13 +181,15 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=ROOT / "results/hail_mary_hpca1/problem_exports")
     parser.add_argument("--image", default=IMAGE)
     parser.add_argument("--delta-max", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     output = args.output.resolve()
-    if output.exists() and any(output.iterdir()):
+    if output.exists() and any(output.iterdir()) and not args.resume:
         raise SystemExit(f"refusing to overwrite non-empty output: {output}")
     output.mkdir(parents=True, exist_ok=True)
     stage = output / "_native_inputs"
-    (stage / "dfg").mkdir(parents=True)
+    (stage / "dfg").mkdir(parents=True, exist_ok=True)
     for kernel, path in KERNELS.items():
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -180,7 +221,9 @@ def main() -> int:
 
     rows: list[dict[str, object]] = []
     pairs = [(kernel, architecture) for kernel in KERNELS for architecture in ARCHES]
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    if args.workers <= 0:
+        raise SystemExit("--workers must be positive")
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {executor.submit(export_pair, pair): pair for pair in pairs}
         for future in as_completed(futures):
             rows.extend(future.result())
