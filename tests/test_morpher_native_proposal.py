@@ -24,6 +24,7 @@ from flowadvantage.morpher_adapter.native_proposal import (
     NativeParentRelaxationContext,
     NativeProposalCompatibilityError,
     NativeRelaxationParentContextProvider,
+    StaticRootParentContextProvider,
     SELECTED_CHECKPOINT_SHA256,
     compatibility_report,
     native_state_hash,
@@ -236,6 +237,43 @@ def test_native_relaxation_result_adapter_preserves_exact_parent_fields(
     assert provider.cache_hits == 0
     assert provider.request_wall_seconds > 0.0
     assert provider.cache_read_seconds == 0.0
+
+
+def test_static_root_parent_solves_once_and_rehashes_successor(native_batch):
+    problem, state, _ = native_batch
+    result = SimpleNamespace(
+        feasible=True,
+        status="optimal",
+        error="",
+        objective=7.0,
+        routing_resource_duals={rid: 0.0 for rid in problem.resources},
+        compute_duals={rid: 0.0 for rid in problem.dp_by_id},
+        capacity_slacks={rid: 1.0 for rid in problem.resources},
+        fractional_flow_concentration=0.2,
+        solve_seconds=0.25,
+        canonicalization_seconds=0.1,
+    )
+
+    class Solver:
+        def __init__(self):
+            self.calls = 0
+
+        def solve(self, checked_problem, checked_state):
+            assert checked_problem is problem
+            assert not checked_state.placements
+            self.calls += 1
+            return result
+
+    solver = Solver()
+    provider = StaticRootParentContextProvider(solver, problem)
+    first = provider.parent_context(problem, state)
+    second = provider.parent_context(problem, state)
+    assert solver.calls == 1
+    assert provider.calls == 2
+    assert provider.cache_hits == 1
+    assert first.schema == "flowadvantage_native_static_root_parent_v1"
+    assert first.state_hash == native_state_hash(state)
+    assert second.semantic_hash == first.semantic_hash
 
 
 def test_fixed17_scores_are_deterministic_finite_and_batched(

@@ -43,3 +43,39 @@ declaring a structurally feasible Morpher state infeasible while retaining the
 fast zero-pad path for cases where the exported ASAP/ALAP interval is complete.
 Fallback use is counted per work item (`schedule_padding_fallbacks`) and is not
 silently merged with the zero-pad timing configuration.
+# 2026-07-31 runtime rescue additions
+
+## Explicit Clarabel internal parallelism benchmark
+
+The frozen baseline remains `relaxation_max_threads=1`. A separate, append-only
+benchmark uses `relaxation_max_threads=8` with `OMP_NUM_THREADS=1` and two outer
+workers. This changes only solver parallelism; it does not change the objective,
+constraints, tolerances, candidate universe, or legality rules. The benchmark
+heartbeat/logs are preserved under the cluster `bench_mt8` directory and are not
+included in headline aggregates until numerical-equivalence checks pass.
+
+## Static-root proposal variant
+
+Because dynamic parent re-solving remained the dominant wall-time cost, an
+explicit `*_static` variant was added. It solves the exact empty-root
+relaxation once per semantic problem/II and reuses its dual context while the
+discrete mapper advances. It is reported separately from the frozen dynamic
+methods and is not substituted silently. Static-root rows carry
+`static_parent=true`, a distinct method name, and a shared semantic cache.
+
+## Morpher route canonicalization
+
+The stable GCC7 Morpher importer can legally collapse a redundant directed
+route detour while preserving II, operation placement, endpoints/timing, and
+native legality. Strict `route_match` remains recorded as false in validation;
+`native_contract_match` is true only when II and placement are unchanged, and
+`native_route_canonicalized` is reported separately. No such row is presented
+as byte-for-byte route equality.
+
+## Unsupported A2 rest-kernel exports
+
+Native export was attempted for `fix_fft`, `gemm_nt`, `hpcg`, and `trmm` on
+`A2_hycube4x4_mem_variant`. Morpher aborts in
+`PathFinderMapper::UpdateVariableBaseAddr` because these DFGs do not contain
+the required memory `base_pointer_name` metadata. The cells remain explicit
+unsupported/infrastructure rows; no synthetic A2 MRRG is fabricated.
