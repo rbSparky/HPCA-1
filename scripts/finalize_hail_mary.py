@@ -195,9 +195,18 @@ def main() -> int:
     # row above.  Prefer a current-source, terminal result and then the newest
     # finished result; this selection is deterministic and is recorded in the
     # pair table through ``source_queue``.
-    def _selection_rank(row: dict[str, Any]) -> tuple[int, int, int, float]:
+    def _selection_rank(row: dict[str, Any]) -> tuple[int, int, int, int, int, float]:
         status = str(row.get("status", ""))
         terminal = int(status in {"DONE", "VALID_MAPPING_FAILURE", "LEGAL_SUCCESS", "TIMEOUT", "ERROR", "SOLVER_REJECTED", "VALIDATOR_FAILURE", "UNSUPPORTED", "CANCELLED"})
+        normal = int(status in {"DONE", "VALID_MAPPING_FAILURE", "LEGAL_SUCCESS"})
+        legal_success = int(
+            str(row.get("success", "")).lower() in {"true", "1"}
+            and str(row.get("legal", "")).lower() in {"true", "1"}
+        )
+        try:
+            ii = int(float(row.get("ii") or row.get("initial_ii") or 10**6))
+        except (TypeError, ValueError):
+            ii = 10**6
         current = int(str(row.get("source_commit", "")) == "1dbc3377672ce3d31f3a0ba45aaea240d96490ed")
         queue = str(row.get("source_queue", ""))
         queue_generation = 3 if queue.endswith("mt8f") else (2 if queue.endswith("mt8e") else (1 if queue.endswith("mt8d") else 0))
@@ -205,7 +214,11 @@ def main() -> int:
             finished = float(row.get("finished_at") or row.get("end_time") or 0.0)
         except (TypeError, ValueError):
             finished = 0.0
-        return (current, terminal, queue_generation, finished)
+        # II-sweep rows are distinct attempts, not duplicate evidence.  Keep
+        # the first legal complete mapping and, among multiple legal rows,
+        # the smallest II.  If no row is legal, retain the most informative
+        # normal completion at the smallest attempted II.
+        return (legal_success, normal, current, -ii, queue_generation, finished)
 
     selected_by_semantic: dict[tuple[str, str, int, str], dict[str, Any]] = {}
     duplicate_semantic: list[dict[str, Any]] = []

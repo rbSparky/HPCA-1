@@ -195,13 +195,20 @@ def _preflight(spec: dict[str, Any]) -> tuple[Path | None, Path, Path]:
 
 
 def _process_totals(process: psutil.Process) -> tuple[float, float]:
+    # Walking the complete descendant tree from the heartbeat thread can
+    # contend with CVXPY/SciPy canonicalization (psutil scans /proc and takes
+    # a global process-table lock).  The queue supervisor independently
+    # samples the full process tree for peak RSS/CPU, so the worker heartbeat
+    # defaults to the cheap self-only sample.  Set this opt-in diagnostic flag
+    # when a descendant census is specifically required.
     cpu_seconds = 0.0
     rss_bytes = 0
     processes = [process]
-    try:
-        processes.extend(process.children(recursive=True))
-    except psutil.Error:
-        pass
+    if os.environ.get("FLOWADVANTAGE_HEARTBEAT_TREE", "0") == "1":
+        try:
+            processes.extend(process.children(recursive=True))
+        except psutil.Error:
+            pass
     for value in processes:
         try:
             times = value.cpu_times()
