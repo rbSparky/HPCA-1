@@ -524,6 +524,7 @@ class NativeRelaxationSolver:
                 assignment_constraints=assignment_constraints,
                 compute_constraints=compute_constraints,
                 routing_constraints=[],
+                dependency_source_rows=(),
             ), problem_index)
 
         source_keys = tuple(
@@ -605,9 +606,6 @@ class NativeRelaxationSolver:
         commodity_incidences: list[sp.csr_matrix] = []
         commodity_outgoing: list[sp.csr_matrix] = []
         commodity_incoming: list[sp.csr_matrix] = []
-        resource_usage_by_source: dict[int, list[Any]] = {
-            index: [] for index in range(len(source_keys))
-        }
         for dependency_index, dependency in enumerate(dependencies):
             source_key, destination_key = _dependency_key(dependency)
             global_columns = global_columns_by_dependency[dependency_index]
@@ -690,25 +688,17 @@ class NativeRelaxationSolver:
             constraints.append(flow_constraint)
             flow_constraints.append(flow_constraint)
             source_row = source_index[source_key]
-            resource_usage = cp.maximum(
-                local_outgoing @ flow,
-                local_incoming @ flow,
-            )
-            resource_usage_by_source[source_row].append(resource_usage)
+            # ``max(outgoing, incoming) <= z`` is exactly equivalent to the
+            # two sparse inequalities below.  Avoiding a per-resource
+            # elementwise CVXPY maximum is important: its epigraph expansion
+            # dominates canonicalization for large native MRRGs.
             constraints.extend(
                 (
-                    resource_usage <= z[source_row, :],
+                    local_outgoing @ flow <= z[source_row, :],
+                    local_incoming @ flow <= z[source_row, :],
                     flow <= w[source_row, columns],
                 )
             )
-        actual_resource_usage = [
-            (
-                values[0]
-                if len(values) == 1
-                else cp.max(cp.vstack(values), axis=0)
-            )
-            for _, values in sorted(resource_usage_by_source.items())
-        ]
 
         # Fixed occupancy and native broadcast/mutex semantics.
         fixed_resource_sources = {
@@ -917,7 +907,11 @@ class NativeRelaxationSolver:
             assignment_constraints=assignment_constraints,
             compute_constraints=compute_constraints,
             routing_constraints=routing_constraints,
-            actual_resource_usage=actual_resource_usage,
+            actual_resource_usage=(),
+            dependency_source_rows=tuple(
+                source_index[_dependency_key(dependency)[0]]
+                for dependency in dependencies
+            ),
         ), problem_index)
 
     def _reachable_edge_columns(
@@ -1185,6 +1179,7 @@ class NativeRelaxationSolver:
             ]
         ],
         actual_resource_usage: Sequence[Any] = (),
+        dependency_source_rows: Sequence[int] = (),
     ) -> NativeRelaxationResult:
         used = ""
         errors = []
@@ -1312,16 +1307,40 @@ class NativeRelaxationSolver:
         resource_duals = np.zeros(len(resource_ids), dtype=float)
         edge_duals = np.zeros(len(edge_ids), dtype=float)
         resource_slacks = np.ones(len(resource_ids), dtype=float)
-        actual_usage_values = (
-            np.vstack(
+        if actual_resource_usage:
+            actual_usage_values = np.vstack(
                 [
                     np.asarray(value.value, dtype=float).reshape(-1)
                     for value in actual_resource_usage
                 ]
             )
-            if actual_resource_usage
-            else np.zeros((0, len(resource_ids)), dtype=float)
-        )
+        elif f is not None and commodity_outgoing and commodity_incoming:
+            # Compute the max(outgoing,incoming) usage numerically after the
+            # solve.  This preserves capacity/slack diagnostics without
+            # putting a CVXPY maximum in the canonicalized problem.
+            actual_usage_values = np.vstack(
+                [
+                    np.maximum(
+                        commodity_outgoing[index]
+                        @ np.asarray(f[index].value, dtype=float).reshape(-1),
+                        commodity_incoming[index]
+                        @ np.asarray(f[index].value, dtype=float).reshape(-1),
+                    )
+                    for index in range(len(f))
+                ]
+            )
+            # ``routing_constraints`` indexes rows by source key, so reduce
+            # all commodities belonging to each source below before use.
+            source_count = max(dependency_source_rows, default=-1) + 1
+            if source_count != len(dependency_source_rows):
+                reduced = np.zeros((source_count, len(resource_ids)))
+                for index, row in enumerate(dependency_source_rows):
+                    reduced[row] = np.maximum(
+                        reduced[row], actual_usage_values[index]
+                    )
+                actual_usage_values = reduced
+        else:
+            actual_usage_values = np.zeros((0, len(resource_ids)), dtype=float)
         for kind, rows, columns, constraint, coefficients, fixed_count in routing_constraints:
             dual = np.maximum(
                 np.asarray(constraint.dual_value, dtype=float).reshape(-1), 0.0
