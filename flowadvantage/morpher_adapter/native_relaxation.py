@@ -316,6 +316,44 @@ class NativeRelaxationSolver:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
 
+    @staticmethod
+    def _pad_native_result(
+        result: NativeRelaxationResult,
+        problem_index: _NativeProblemIndex,
+    ) -> NativeRelaxationResult:
+        """Restore complete native-ID dictionaries after active-subgraph solve."""
+
+        result.routing_resource_duals = {
+            rid: float(result.routing_resource_duals.get(rid, 0.0))
+            for rid in problem_index.resource_ids
+        }
+        result.normalized_resource_duals = {
+            rid: float(result.normalized_resource_duals.get(rid, 0.0))
+            for rid in problem_index.resource_ids
+        }
+        result.capacity_slacks = {
+            rid: float(result.capacity_slacks.get(rid, 1.0))
+            for rid in problem_index.resource_ids
+        }
+        result.routing_edge_duals = {
+            edge_id: float(result.routing_edge_duals.get(edge_id, 0.0))
+            for edge_id in problem_index.edge_ids
+        }
+        result.normalized_edge_duals = {
+            edge_id: float(result.normalized_edge_duals.get(edge_id, 0.0))
+            for edge_id in problem_index.edge_ids
+        }
+        result.full_flow_variables = (
+            result.remaining_dependencies * len(problem_index.edge_ids)
+        )
+        result.flow_edge_reduction_fraction = (
+            0.0
+            if result.full_flow_variables <= 0
+            else 1.0
+            - float(result.flow_variables) / float(result.full_flow_variables)
+        )
+        return result
+
     def _solve_uncached(
         self,
         problem: NativeMorpherProblem,
@@ -356,12 +394,12 @@ class NativeRelaxationSolver:
             )
 
         problem_index = self._problem_index(problem)
-        resource_ids = problem_index.resource_ids
-        resource_index = problem_index.resource_index
-        native_edges = problem_index.native_edges
-        edge_index = problem_index.edge_index
-        edge_ids = problem_index.edge_ids
-        r_count, e_count = len(resource_ids), len(native_edges)
+        # Keep the complete native index for provenance/dual padding, but use
+        # a state-local active subgraph for CVXPY.  Resources and links that
+        # cannot lie on any legal source-to-sink corridor have identically zero
+        # flow and zero dual; omitting them is an exact sparse reduction.
+        all_resource_ids = problem_index.resource_ids
+        all_native_edges = problem_index.native_edges
 
         # Placement candidates are exact native FU/DataPath/absolute-latency
         # assignments within the declared Morpher schedule horizon.
@@ -468,7 +506,7 @@ class NativeRelaxationSolver:
         if not dependencies:
             objective = cp.Minimize(self.config.tau / 2.0 * cp.sum_squares(x))
             cvx_problem = cp.Problem(objective, constraints)
-            return self._run_problem(
+            return self._pad_native_result(self._run_problem(
                 cvx_problem,
                 start=start,
                 canonical_seconds=0.0,
@@ -486,14 +524,78 @@ class NativeRelaxationSolver:
                 assignment_constraints=assignment_constraints,
                 compute_constraints=compute_constraints,
                 routing_constraints=[],
-            )
+            ), problem_index)
 
         source_keys = tuple(
             sorted({_dependency_key(dependency)[0] for dependency in dependencies})
         )
         source_index = {key: index for index, key in enumerate(source_keys)}
+        global_columns_by_dependency: list[np.ndarray] = []
+        for dependency in dependencies:
+            columns = self._reachable_edge_columns(
+                problem,
+                state,
+                candidates,
+                candidate_by_operation,
+                dependency,
+                all_native_edges,
+            )
+            if columns.size == 0:
+                source_key, destination_key = _dependency_key(dependency)
+                return _native_failure(
+                    "infeasible",
+                    "none",
+                    start,
+                    cache_key,
+                    len(remaining),
+                    len(dependencies),
+                    f"no legal temporal native route edges for {source_key}->{destination_key}",
+                    placement_variables=len(candidates),
+                )
+            global_columns_by_dependency.append(columns)
+        active_global_edges = np.asarray(
+            sorted({int(column) for columns in global_columns_by_dependency for column in columns}),
+            dtype=int,
+        )
+        native_edges = tuple(all_native_edges[int(column)] for column in active_global_edges)
+        global_to_local_edge = {
+            int(global_column): local_column
+            for local_column, global_column in enumerate(active_global_edges)
+        }
+        edge_ids = tuple(f"{left}->{right}" for left, right in native_edges)
+        endpoint_resources: set[str] = set()
+        for dependency in dependencies:
+            source_key, destination_key = _dependency_key(dependency)
+            edge_type = str(dependency.get("edge_type", ""))
+            for endpoint_key, is_source in ((source_key, True), (destination_key, False)):
+                placements = (
+                    [state.placements[endpoint_key]]
+                    if endpoint_key in state.placements
+                    else [candidates[index] for index in candidate_by_operation[endpoint_key]]
+                )
+                for placement in placements:
+                    endpoint_resources.add(
+                        problem.output_port(placement)
+                        if is_source
+                        else problem.operand_port(placement, edge_type)
+                    )
+        active_resources = set(endpoint_resources)
+        for left, right in native_edges:
+            active_resources.update((left, right))
+        resource_ids = tuple(sorted(active_resources))
+        resource_index = {rid: column for column, rid in enumerate(resource_ids)}
+        r_count, e_count = len(resource_ids), len(native_edges)
         z = cp.Variable((len(source_keys), r_count), nonneg=True, name="native_z")
         w = cp.Variable((len(source_keys), e_count), nonneg=True, name="native_w")
+        # Flattened views make the native capacity matrices explicit sparse
+        # linear operators.  Advanced 2-D CVXPY indexing otherwise expands a
+        # large dense expression graph during canonicalization.
+        z_flat = cp.reshape(
+            z, (len(source_keys) * r_count,), order="C"
+        )
+        w_flat = cp.reshape(
+            w, (len(source_keys) * e_count,), order="C"
+        )
         constraints.extend((z <= 1.0, w <= 1.0))
 
         endpoint_rhs: list[Any] = []
@@ -508,25 +610,11 @@ class NativeRelaxationSolver:
         }
         for dependency_index, dependency in enumerate(dependencies):
             source_key, destination_key = _dependency_key(dependency)
-            columns = self._reachable_edge_columns(
-                problem,
-                state,
-                candidates,
-                candidate_by_operation,
-                dependency,
-                native_edges,
+            global_columns = global_columns_by_dependency[dependency_index]
+            columns = np.asarray(
+                [global_to_local_edge[int(value)] for value in global_columns],
+                dtype=int,
             )
-            if columns.size == 0:
-                return _native_failure(
-                    "infeasible",
-                    "none",
-                    start,
-                    cache_key,
-                    len(remaining),
-                    len(dependencies),
-                    f"no legal temporal native route edges for {source_key}->{destination_key}",
-                    placement_variables=len(candidates),
-                )
             commodity_columns.append(columns)
             incidence_key = (id(problem), tuple(int(value) for value in columns))
             cached_incidence = (
@@ -665,10 +753,12 @@ class NativeRelaxationSolver:
                 resource_allowed[source_row] <= 0.0
             )
             if forbidden_resources.size:
-                constraints.append(z[source_row, forbidden_resources] == 0.0)
+                flat_indices = source_row * r_count + forbidden_resources
+                constraints.append(z_flat[flat_indices] == 0.0)
             forbidden_edges = np.flatnonzero(edge_allowed[source_row] <= 0.0)
             if forbidden_edges.size:
-                constraints.append(w[source_row, forbidden_edges] == 0.0)
+                flat_indices = source_row * e_count + forbidden_edges
+                constraints.append(w_flat[flat_indices] == 0.0)
 
         clique_key = (id(problem), source_keys)
         incompatibility_cliques = (
@@ -727,29 +817,21 @@ class NativeRelaxationSolver:
             # forbidden mask.  Remove fixed rows explicitly for each column;
             # the grouped expression below is exact because its RHS is zero
             # on columns with a fixed occupant and the fixed rows are omitted.
-            grouped_resource_columns: dict[tuple[int, ...], list[int]] = {}
+            resource_rows: list[int] = []
+            resource_cols: list[int] = []
+            resource_data: list[float] = []
             for column_offset, resource_column in enumerate(non_mux_columns):
                 rid = resource_ids[resource_column]
-                active = tuple(
-                    row for row, key in zip(rows_in_clique, clique)
-                    if key not in fixed_resource_sources[rid]
-                )
-                grouped_resource_columns.setdefault(active, []).append(
-                    int(column_offset)
-                )
-            z_terms = []
-            resource_group_order: list[int] = []
-            for active, offsets in grouped_resource_columns.items():
-                columns = non_mux_columns[np.asarray(offsets, dtype=int)]
-                resource_group_order.extend(offsets)
-                z_terms.append(
-                    cp.sum(z[np.ix_(np.asarray(active, dtype=int), columns)], axis=0)
-                    if active
-                    else np.zeros(len(columns), dtype=float)
-                )
-            grouped_lhs = cp.hstack(z_terms)
-            inverse = np.argsort(np.asarray(resource_group_order, dtype=int))
-            constraint = grouped_lhs[np.asarray(inverse, dtype=int)] <= 1.0 - fixed_count
+                for row, key in zip(rows_in_clique, clique):
+                    if key not in fixed_resource_sources[rid]:
+                        resource_rows.append(column_offset)
+                        resource_cols.append(row * r_count + int(resource_column))
+                        resource_data.append(1.0)
+            resource_matrix = sp.csr_matrix(
+                (resource_data, (resource_rows, resource_cols)),
+                shape=(len(non_mux_columns), len(source_keys) * r_count),
+            )
+            constraint = resource_matrix @ z_flat <= 1.0 - fixed_count
             constraints.append(constraint)
             routing_constraints.append(
                 (
@@ -773,27 +855,21 @@ class NativeRelaxationSolver:
                         edge_coefficients[row_offset, edge_column] = 0.0
                 if any(key in fixed for key in clique):
                     edge_fixed_count[edge_column] = 1.0
-            grouped_edge_columns: dict[tuple[int, ...], list[int]] = {}
+            edge_rows: list[int] = []
+            edge_cols: list[int] = []
+            edge_data: list[float] = []
             for edge_column, edge in enumerate(native_edges):
                 fixed = fixed_edge_sources[edge]
-                active = tuple(
-                    row for row, key in zip(rows_in_clique, clique)
-                    if key not in fixed
-                )
-                grouped_edge_columns.setdefault(active, []).append(edge_column)
-            w_terms = []
-            edge_group_order: list[int] = []
-            for active, columns_list in grouped_edge_columns.items():
-                columns = np.asarray(columns_list, dtype=int)
-                edge_group_order.extend(columns_list)
-                w_terms.append(
-                    cp.sum(w[np.ix_(np.asarray(active, dtype=int), columns)], axis=0)
-                    if active
-                    else np.zeros(len(columns), dtype=float)
-                )
-            grouped_edge_lhs = cp.hstack(w_terms)
-            edge_inverse = np.argsort(np.asarray(edge_group_order, dtype=int))
-            edge_constraint = grouped_edge_lhs[np.asarray(edge_inverse, dtype=int)] <= 1.0 - edge_fixed_count
+                for row, key in zip(rows_in_clique, clique):
+                    if key not in fixed:
+                        edge_rows.append(edge_column)
+                        edge_cols.append(row * e_count + edge_column)
+                        edge_data.append(1.0)
+            edge_matrix = sp.csr_matrix(
+                (edge_data, (edge_rows, edge_cols)),
+                shape=(e_count, len(source_keys) * e_count),
+            )
+            edge_constraint = edge_matrix @ w_flat <= 1.0 - edge_fixed_count
             constraints.append(edge_constraint)
             routing_constraints.append(
                 (
@@ -819,7 +895,7 @@ class NativeRelaxationSolver:
             )
         )
         cvx_problem = cp.Problem(objective, constraints)
-        return self._run_problem(
+        return self._pad_native_result(self._run_problem(
             cvx_problem,
             start=start,
             canonical_seconds=0.0,
@@ -842,7 +918,7 @@ class NativeRelaxationSolver:
             compute_constraints=compute_constraints,
             routing_constraints=routing_constraints,
             actual_resource_usage=actual_resource_usage,
-        )
+        ), problem_index)
 
     def _reachable_edge_columns(
         self,
