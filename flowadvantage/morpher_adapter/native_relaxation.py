@@ -1345,11 +1345,20 @@ class NativeRelaxationSolver:
                 solve_start = time.perf_counter()
                 problem.solve(solver=solver, **kwargs)
                 solve_seconds += time.perf_counter() - solve_start
+                # A Clarabel ``user_limit`` is an operationally meaningful
+                # terminal result.  Falling through to OSQP after a large
+                # native conic problem hits its time limit rebuilds an even
+                # larger QP and can spend another hour in setup without
+                # improving the scientific result.  Preserve the solver
+                # status and diagnostics instead of silently converting a
+                # bounded solver limit into an unbounded fallback attempt.
                 if problem.status in {
                     "optimal",
                     "optimal_inaccurate",
                     "infeasible",
                     "unbounded",
+                    "user_limit",
+                    "solver_error",
                 }:
                     break
             except Exception as exc:  # preserve every solver failure
