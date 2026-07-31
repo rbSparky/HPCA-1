@@ -1,0 +1,56 @@
+{
+  "schema": "hail_mary_a2_repair_manifest_v1",
+  "generated_at_utc": "2026-07-31T03:33:47.104578+00:00",
+  "generator_commit": "9c960d3",
+  "allocator": "scripts/repair_a2_data_layout.py",
+  "rows": [
+    {
+      "kernel": "fix_fft",
+      "architecture": "A2_hycube4x4_mem_variant",
+      "native_architecture": "results/hail_mary_hpca1/a2_repaired_arch/fix_fft/hycube_original_mem.json",
+      "native_architecture_sha256": "a5329b4412b82a00144d9056bd6c001655dff42894659c72c90df763fa79bd91",
+      "dfg_json": "results/hail_mary_hpca1/a2_repaired_exports/fix_fft/A2/ii0/dfg.json",
+      "dfg_json_sha256": "e7ae61cc3b191e7da42987bc42c19a04b2f64e355fd664dc2a3d1ba0872e9b1a",
+      "mrrg_json": "results/hail_mary_hpca1/a2_repaired_exports/fix_fft/A2/ii0/mrrg.json",
+      "mrrg_json_sha256": "c2f1acaca85d68fc5ad7bcabcdc2c245eba300d8206415860515d2c0ddac2d87",
+      "problem_manifest_sha256": "ac612053a9f0dbed67eb6d582b3c47a3700f6fc35d141c913317ed8292311d35",
+      "export_status": "PASS"
+    },
+    {
+      "kernel": "gemm_nt",
+      "architecture": "A2_hycube4x4_mem_variant",
+      "native_architecture": "results/hail_mary_hpca1/a2_repaired_arch/gemm_nt/hycube_original_mem.json",
+      "native_architecture_sha256": "4c9d0055afd0d64eedf3f393399453e147a8dbbe2a7b1c9d3de45bfa3d2eef42",
+      "dfg_json": "results/hail_mary_hpca1/a2_repaired_exports/gemm_nt/A2/ii0/dfg.json",
+      "dfg_json_sha256": "1277172040a47b32175ee061d6112be8c1a063ffdcd1820fcdca30c7874970b3",
+      "mrrg_json": "results/hail_mary_hpca1/a2_repaired_exports/gemm_nt/A2/ii0/mrrg.json",
+      "mrrg_json_sha256": "ce792e43b1fd6e119d2cf4b2f090ed054a222c0afac786e56bbbcd8e60be680e",
+      "problem_manifest_sha256": "74924c3fab145637111c81bde407beab8e6ae5eebd2643f8d6c1047b6667ab67",
+      "export_status": "PASS"
+    },
+    {
+      "kernel": "hpcg",
+      "architecture": "A2_hycube4x4_mem_variant",
+      "native_architecture": "results/hail_mary_hpca1/a2_repaired_arch/hpcg/hycube_original_mem.json",
+      "native_architecture_sha256": "3ccebbc899c6d76d32313e66acc063406f9d7bc5adc32326a163bf5059a59397",
+      "dfg_json": "results/hail_mary_hpca1/a2_repaired_exports/hpcg/A2/ii0/dfg.json",
+      "dfg_json_sha256": "1f8f186404df9d4c9fcaa99be5d0241ba6da781929be148678da6fc8b0e4d0f6",
+      "mrrg_json": "results/hail_mary_hpca1/a2_repaired_exports/hpcg/A2/ii0/mrrg.json",
+      "mrrg_json_sha256": "b9aa98aafd6d247f5d1d54d12d6e326ef91b1ecd0978c0dc5403dffaadc59e03",
+      "problem_manifest_sha256": "e59462f7ccf550873fc10762ac42738f6c35b5ec498445cf971087cfa5aa98dd",
+      "export_status": "PASS"
+    },
+    {
+      "kernel": "trmm",
+      "architecture": "A2_hycube4x4_mem_variant",
+      "native_architecture": "results/hail_mary_hpca1/a2_repaired_arch/trmm/hycube_original_mem.json",
+      "native_architecture_sha256": "567f77e4447e7c01cb08338d2d4919a9602916e0beb14c158d901b00305cae22",
+      "dfg_json": "results/hail_mary_hpca1/a2_repaired_exports/trmm/A2/ii0/dfg.json",
+      "dfg_json_sha256": "0071363962f49c45e21204d5916ae5248f39c30ff956117a8c8a7010a7072ed8",
+      "mrrg_json": "results/hail_mary_hpca1/a2_repaired_exports/trmm/A2/ii0/mrrg.json",
+      "mrrg_json_sha256": "e62f2965fe375cfabdc49e3029a9d5f1ad15ead97ba590f733332b70d3ede24e",
+      "problem_manifest_sha256": "072507ce50b99baec64d3c317bac56ff193bf3e18c459290b7a109e5ea7a11a5",
+      "export_status": "PASS"
+    }
+  ]
+}
