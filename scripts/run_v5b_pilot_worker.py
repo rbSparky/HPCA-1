@@ -97,6 +97,14 @@ def _optional_bool(value: Any, default: bool) -> bool:
     raise ValueError(f"invalid boolean manifest value {value!r}")
 
 
+def _optional_int(value: Any, default: int) -> int:
+    """Parse a manifest integer while treating CSV empty cells as absent."""
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return int(default)
+    return int(value)
+
+
 def _prefix_depth(total_operations: int, depth_fraction: float) -> int:
     """Return the exact deterministic-prefix depth.
 
@@ -661,6 +669,9 @@ def _native_search(
                 ),
                 max_solve_seconds=_optional_float(
                     spec.get("relaxation_timeout"), 120.0
+                ),
+                max_threads=_optional_int(
+                    spec.get("relaxation_max_threads"), 1
                 ),
                 reachable_edge_pruning=_optional_bool(
                     spec.get("reachable_edge_pruning"), True

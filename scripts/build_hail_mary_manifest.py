@@ -116,6 +116,11 @@ def row_base(
         "relaxation_extra_ii_periods": 0,
         "relaxation_fallback_extra_ii_periods": 1,
         "relaxation_timeout": 120.0,
+        # Clarabel's internal factorization parallelism is deliberately
+        # explicit in the manifest.  The default remains one thread for
+        # reproducibility; cluster benchmarks may raise it after measuring
+        # wall-time, RSS, and numerical equivalence.
+        "relaxation_max_threads": 1,
         "reachable_edge_pruning": True,
         "device": "cpu",
         "requested_ii_delta": delta,
