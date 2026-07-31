@@ -92,3 +92,12 @@ missing objects deterministically and without overlap across the two existing
 native Morpher problem-export command at their actual lower-bound II. The
 original abort logs remain preserved as failure provenance, while the clean
 queue uses the repaired per-kernel native architecture paths.
+
+## Remote scientific-runtime repair
+
+The cluster environment initially reported NumPy `2.3.5` with SciPy `1.14.1`,
+whose supported NumPy range is `<2.3`; every worker emitted the compatibility
+warning. Before the cache-warm repaired queue, NumPy was pinned to the
+compatible `2.2.6` build in the existing environment. No solver, mapper,
+model, architecture, or result semantics changed; subsequent workers use the
+corrected numerical ABI.
