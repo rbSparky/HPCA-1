@@ -81,6 +81,13 @@ def load_queue(queue: Path, label: str) -> list[dict[str, Any]]:
     for row in rows:
         payload: dict[str, Any] = {}
         result = Path(row.get("result_path", ""))
+        # Remote manifests contain absolute cluster paths.  After an
+        # append-only rsync, resolve the same immutable basename in the local
+        # queue directory rather than silently treating every row as missing.
+        if not result.is_file():
+            local_result = queue / "work_items" / result.name
+            if local_result.is_file():
+                result = local_result
         if result.is_file():
             try:
                 payload = json.loads(result.read_text(encoding="utf-8"))
