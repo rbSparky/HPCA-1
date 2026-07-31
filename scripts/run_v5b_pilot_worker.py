@@ -683,6 +683,13 @@ def _native_search(
                 fallback_extra_ii_periods=int(
                     spec.get("relaxation_fallback_extra_ii_periods") or 0
                 ),
+                # Keep the frozen pilot default (Clarabel -> OSQP), while
+                # allowing an append-only solver benchmark or rescue queue to
+                # request OSQP first without editing the scientific mapper.
+                # The selected solver names are part of the immutable work
+                # item/config hash and are recorded in every result.
+                solver_primary=str(spec.get("relaxation_solver_primary") or "CLARABEL"),
+                solver_fallback=str(spec.get("relaxation_solver_fallback") or "OSQP"),
                 max_solve_seconds=_optional_float(
                     spec.get("relaxation_timeout"), 120.0
                 ),
