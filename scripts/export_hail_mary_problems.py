@@ -183,6 +183,8 @@ def main() -> int:
     parser.add_argument("--delta-max", type=int, default=4)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--kernels", default=",".join(KERNELS))
+    parser.add_argument("--architectures", default=",".join(ARCHES))
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists() and any(output.iterdir()) and not args.resume:
@@ -194,6 +196,20 @@ def main() -> int:
         if not path.is_file():
             raise FileNotFoundError(path)
         shutil.copy2(path, stage / "dfg" / f"{kernel}.xml")
+    selected_kernels = tuple(
+        value.strip() for value in args.kernels.split(",") if value.strip()
+    )
+    selected_architectures = tuple(
+        value.strip() for value in args.architectures.split(",") if value.strip()
+    )
+    unknown_kernels = set(selected_kernels) - set(KERNELS)
+    unknown_architectures = set(selected_architectures) - set(ARCHES)
+    if unknown_kernels or unknown_architectures:
+        raise SystemExit(
+            f"unknown export selection kernels={sorted(unknown_kernels)} "
+            f"architectures={sorted(unknown_architectures)}"
+        )
+
     def export_pair(item: tuple[str, str]) -> list[dict[str, object]]:
         kernel, architecture = item
         source_dfg = KERNELS[kernel]
@@ -220,7 +236,11 @@ def main() -> int:
         return pair_rows
 
     rows: list[dict[str, object]] = []
-    pairs = [(kernel, architecture) for kernel in KERNELS for architecture in ARCHES]
+    pairs = [
+        (kernel, architecture)
+        for kernel in selected_kernels
+        for architecture in selected_architectures
+    ]
     if args.workers <= 0:
         raise SystemExit("--workers must be positive")
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
