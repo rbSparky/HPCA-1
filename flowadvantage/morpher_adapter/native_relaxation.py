@@ -432,6 +432,96 @@ class NativeRelaxationSolver:
                 candidates.append(placement)
             candidate_by_operation[node_key] = indices
 
+        # Necessary-condition pruning before any CVXPY variable is created.
+        # A placement whose native endpoint is absent from the exact temporal
+        # corridor of one of its incident dependencies can never carry a
+        # legal route.  Removing only those candidates is algebraically exact
+        # (the corresponding fractional variables are forced to zero), while
+        # substantially reducing the root-state canonicalization problem.
+        if dependencies:
+            provisional_corridors: list[np.ndarray] = []
+            for dependency in dependencies:
+                columns = self._reachable_edge_columns(
+                    problem,
+                    state,
+                    candidates,
+                    candidate_by_operation,
+                    dependency,
+                    all_native_edges,
+                )
+                if columns.size == 0:
+                    source_key, destination_key = _dependency_key(dependency)
+                    return _native_failure(
+                        "infeasible",
+                        "none",
+                        start,
+                        cache_key,
+                        len(remaining),
+                        len(dependencies),
+                        f"no legal temporal native route edges for {source_key}->{destination_key}",
+                        placement_variables=len(candidates),
+                    )
+                provisional_corridors.append(columns)
+            kept_old: set[int] = set()
+            for node_key in remaining:
+                incident = [
+                    (
+                        dependency,
+                        {
+                            all_native_edges[int(column)][side]
+                            for column in columns
+                            for side in (0, 1)
+                        },
+                    )
+                    for dependency, columns in zip(
+                        dependencies, provisional_corridors
+                    )
+                    if node_key in _dependency_key(dependency)
+                ]
+                for old_index in candidate_by_operation[node_key]:
+                    placement = candidates[old_index]
+                    valid = True
+                    for dependency, edge_resources in incident:
+                        source_key, destination_key = _dependency_key(dependency)
+                        edge_type = str(dependency.get("edge_type", ""))
+                        endpoint = (
+                            problem.output_port(placement)
+                            if source_key == node_key
+                            else problem.operand_port(placement, edge_type)
+                        )
+                        if endpoint not in edge_resources:
+                            valid = False
+                            break
+                    if valid:
+                        kept_old.add(old_index)
+            if len(kept_old) < len(candidates):
+                remap = {
+                    old_index: new_index
+                    for new_index, old_index in enumerate(
+                        index for index in range(len(candidates))
+                        if index in kept_old
+                    )
+                }
+                candidates = [
+                    placement
+                    for index, placement in enumerate(candidates)
+                    if index in kept_old
+                ]
+                candidate_by_operation = {
+                    node_key: [remap[index] for index in indices if index in remap]
+                    for node_key, indices in candidate_by_operation.items()
+                }
+                if any(not indices for indices in candidate_by_operation.values()):
+                    return _native_failure(
+                        "infeasible",
+                        "none",
+                        start,
+                        cache_key,
+                        len(remaining),
+                        len(dependencies),
+                        "endpoint-corridor candidate pruning removed an operation's support",
+                    )
+
         x = cp.Variable(len(candidates), name="native_x")
         constraints: list[cp.Constraint] = [x >= 0.0, x <= 1.0]
         assignment_constraints: list[tuple[str, list[int], cp.Constraint]] = []

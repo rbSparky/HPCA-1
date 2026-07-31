@@ -16,3 +16,13 @@ responses to observed Hail-Mary test outcomes.
 
 Timeouts, unsupported cells, solver rejections, and validation failures remain
 distinct from valid mapping failure. No gate or threshold is changed here.
+
+## Runtime-engineering amendments (recorded before the restarted queue)
+
+| Item | Original execution value | Relaunch value | Reason |
+|---|---:|---:|---|
+| Flow work-item wall limit | 600 s | 3,600 s | The first native root relaxation was demonstrably progressing inside Clarabel; the shorter limit would censor valid work. The terminal status remains `TIMEOUT` only after the longer limit. |
+| Relaxation solver request limit | 120 s | 600 s | Avoid prematurely terminating a large but resource-bounded native root solve; solver status and wall time remain recorded separately. |
+| Native relaxation formulation | dense CVXPY masks/max epigraphs | sparse indexed capacity operators and paired outgoing/incoming inequalities | Exact algebraic equivalence; verified by native relaxation tests and documented in the runtime log. |
+| Problem export workers | 2 | 4 per export wave | Host has 8 CPUs and each native export is single-threaded; no semantic change. |
+| Export scheduling | all pairs in one wave | resumable waves with selective kernel/architecture filters | Prevents a known incompatible memory-architecture cell from blocking unrelated exports; unsupported cells are retained with stderr. |
