@@ -763,8 +763,9 @@ def _native_search(
                 "candidate_actions": event.generated_actions,
                 "routing_attempts": event.routed_actions + event.failed_targets,
                 "parent_solves": int(
-                    getattr(parent_provider, "calls", 0)
+                    getattr(parent_provider, "solves", getattr(parent_provider, "calls", 0))
                 ),
+                "parent_requests": int(getattr(parent_provider, "calls", 0)),
                 "child_solves": int(
                     getattr(child_evaluator, "total_evaluations", 0)
                 ),
@@ -852,7 +853,10 @@ def _native_search(
             prefix_mapper.action_universe_hash if prefix_depth else ""
         ),
         "completion_action_universe_hash": mapper.action_universe_hash,
-        "parent_solves": int(getattr(parent_provider, "calls", 0)),
+        "parent_solves": int(
+            getattr(parent_provider, "solves", getattr(parent_provider, "calls", 0))
+        ),
+        "parent_requests": int(getattr(parent_provider, "calls", 0)),
         "parent_cache_hits": int(
             getattr(parent_provider, "cache_hits", 0)
         ),

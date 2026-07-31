@@ -200,6 +200,7 @@ class NativeRelaxationParentContextProvider:
         self.solver = solver
         self.last_result: Any | None = None
         self.calls = 0
+        self.solves = 0
         self.cache_hits = 0
         self.request_wall_seconds = 0.0
         self.cache_read_seconds = 0.0
@@ -221,6 +222,7 @@ class NativeRelaxationParentContextProvider:
             self.cache_hits += 1
             self.cache_read_seconds += request_seconds
         else:
+            self.solves += 1
             self.logical_solve_seconds += float(
                 getattr(result, "solve_seconds", 0.0)
             )
@@ -268,6 +270,7 @@ class StaticRootParentContextProvider:
         self.problem = problem
         self.root_context: NativeParentRelaxationContext | None = None
         self.calls = 0
+        self.solves = 0
         self.cache_hits = 0
         self.request_wall_seconds = 0.0
         self.cache_read_seconds = 0.0
@@ -284,6 +287,7 @@ class StaticRootParentContextProvider:
         if self.root_context is None:
             root = NativeMappingState(problem)
             result = self.solver.solve(problem, root)
+            self.solves += 1
             elapsed = time.perf_counter() - started
             self.request_wall_seconds += elapsed
             self.logical_solve_seconds += float(getattr(result, "solve_seconds", 0.0))
