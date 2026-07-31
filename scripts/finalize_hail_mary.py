@@ -188,13 +188,44 @@ def main() -> int:
     # Per-kernel/architecture coverage is the only acceptable denominator for
     # headline comparisons; no unequal aggregate is silently formed.
     pair_rows: list[dict[str, Any]] = []
-    grouped: dict[tuple[str, str, int, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+    # A method is allowed to have been attempted in more than one append-only
+    # queue while rescuing a stalled run.  Pairing by queue would silently
+    # produce zero denominators (length and top-4 naturally live in different
+    # queues).  Collapse only semantic duplicates here, retaining every raw
+    # row above.  Prefer a current-source, terminal result and then the newest
+    # finished result; this selection is deterministic and is recorded in the
+    # pair table through ``source_queue``.
+    def _selection_rank(row: dict[str, Any]) -> tuple[int, int, int, float]:
+        status = str(row.get("status", ""))
+        terminal = int(status in {"DONE", "VALID_MAPPING_FAILURE", "LEGAL_SUCCESS", "TIMEOUT", "ERROR", "SOLVER_REJECTED", "VALIDATOR_FAILURE", "UNSUPPORTED", "CANCELLED"})
+        current = int(str(row.get("source_commit", "")) == "1dbc3377672ce3d31f3a0ba45aaea240d96490ed")
+        queue = str(row.get("source_queue", ""))
+        queue_generation = 3 if queue.endswith("mt8f") else (2 if queue.endswith("mt8e") else (1 if queue.endswith("mt8d") else 0))
+        try:
+            finished = float(row.get("finished_at") or row.get("end_time") or 0.0)
+        except (TypeError, ValueError):
+            finished = 0.0
+        return (current, terminal, queue_generation, finished)
+
+    selected_by_semantic: dict[tuple[str, str, int, str], dict[str, Any]] = {}
+    duplicate_semantic: list[dict[str, Any]] = []
     for row in records:
-        key = (str(row.get("kernel")), str(row.get("architecture")), int(float(row.get("seed") or 0)), str(row.get("source_queue")))
+        key = (str(row.get("kernel")), str(row.get("architecture")), int(float(row.get("seed") or 0)), str(row.get("analysis_method")))
+        previous = selected_by_semantic.get(key)
+        if previous is None or _selection_rank(row) > _selection_rank(previous):
+            if previous is not None:
+                duplicate_semantic.append({"semantic_key": "|".join(map(str, key)), "kept_queue": row.get("source_queue", ""), "discarded_queue": previous.get("source_queue", ""), "discarded_status": previous.get("status", "")})
+            selected_by_semantic[key] = row
+        else:
+            duplicate_semantic.append({"semantic_key": "|".join(map(str, key)), "kept_queue": previous.get("source_queue", ""), "discarded_queue": row.get("source_queue", ""), "discarded_status": row.get("status", "")})
+    records_for_pairing = list(selected_by_semantic.values())
+    grouped: dict[tuple[str, str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in records_for_pairing:
+        key = (str(row.get("kernel")), str(row.get("architecture")), int(float(row.get("seed") or 0)))
         grouped[key][str(row.get("analysis_method"))] = row
     for key, methods in sorted(grouped.items()):
-        kernel, architecture, seed, queue = key
-        pair_rows.append({"kernel": kernel, "architecture": architecture, "seed": seed, "source_queue": queue, **{f"{method}_status": row.get("status") for method, row in sorted(methods.items())}, **{f"{method}_success": row.get("legal_success") for method, row in sorted(methods.items())}})
+        kernel, architecture, seed = key
+        pair_rows.append({"kernel": kernel, "architecture": architecture, "seed": seed, **{f"{method}_source_queue": row.get("source_queue") for method, row in sorted(methods.items())}, **{f"{method}_status": row.get("status") for method, row in sorted(methods.items())}, **{f"{method}_success": row.get("legal_success") for method, row in sorted(methods.items())}})
     atomic_csv(root / "tables/pair_outcomes.csv", pair_rows)
     atomic_text(root / "tables/pair_outcomes.md", markdown(pair_rows))
     comparisons: list[dict[str, Any]] = []
@@ -214,7 +245,8 @@ def main() -> int:
     atomic_csv(raw / "bootstrap_results.csv", comparisons)
     atomic_csv(root / "tables/paired_comparisons.csv", comparisons)
     atomic_text(root / "tables/paired_comparisons.md", markdown(comparisons))
-    summary = {"schema": "flowadvantage_hail_mary_results_v1", "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "queue_dirs": [str(q) for q, _ in queues], "rows": len(records), "normal_completions": sum(bool(r["normal_completion"]) for r in records), "legal_successes": sum(bool(r["legal_success"]) for r in records), "statuses": dict(Counter(str(r.get("status", "")) for r in records)), "duplicates": len(duplicates), "bootstrap_seed": 24072026, "bootstrap_resamples": 10000}
+    atomic_csv(raw / "duplicate_semantic_work_items.csv", duplicate_semantic)
+    summary = {"schema": "flowadvantage_hail_mary_results_v1", "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "queue_dirs": [str(q) for q, _ in queues], "rows": len(records), "pairing_rows": len(records_for_pairing), "normal_completions": sum(bool(r["normal_completion"]) for r in records), "legal_successes": sum(bool(r["legal_success"]) for r in records), "statuses": dict(Counter(str(r.get("status", "")) for r in records)), "duplicates": len(duplicates), "semantic_duplicates": len(duplicate_semantic), "bootstrap_seed": 24072026, "bootstrap_resamples": 10000}
     atomic_text(root / "real_pilot_aggregation.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
     report = ["# Hail-Mary real-pilot aggregation", "", f"Generated: {summary['generated_at_utc']}", "", "This report is generated exclusively from immutable atomic queue results. Operational timeouts/errors are retained and excluded from mapping-quality denominators.", "", "## Status census", "", markdown(status_rows), "## Method coverage", "", markdown(coverage), "## Paired comparisons", "", markdown(comparisons)]
     atomic_text(root / "HAIL_MARY_REAL_RESULTS.md", "\n".join(report))
