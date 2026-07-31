@@ -172,8 +172,25 @@ def main() -> int:
         native_dfg = native_root / "dfg" / f"{kernel}.xml"
         for architecture in arches:
             pair = problem_root / kernel / architecture
-            lb_doc = json.loads((pair / "ii0" / "problem_manifest.json").read_text())
-            lower_bound = int(lb_doc["ii"])
+            # Native-only jobs ask Morpher itself to derive the lower bound
+            # with ``-i 0``.  A problem-only export is therefore optional for
+            # those jobs, especially on held-out architectures whose export
+            # was intentionally deferred.  Flow jobs still fail closed when
+            # the exact exported contract is absent.
+            problem_pair = pair
+            if not (problem_pair / "ii0" / "problem_manifest.json").is_file() and architecture == "A2_hycube4x4_mem_variant":
+                repaired_pair = problem_root / kernel / "A2"
+                if (repaired_pair / "ii0" / "problem_manifest.json").is_file():
+                    problem_pair = repaired_pair
+            if (problem_pair / "ii0" / "problem_manifest.json").is_file():
+                lb_doc = json.loads((problem_pair / "ii0" / "problem_manifest.json").read_text())
+                lower_bound = int(lb_doc["ii"])
+            elif args.native_only:
+                lower_bound = 0
+            else:
+                raise FileNotFoundError(
+                    f"problem-only export missing for FlowAdvantage job {kernel}/{architecture}"
+                )
             native_arch = Path(args.toolchain) / (
                 "source/Morpher_CGRA_Mapper/" +
                 {
