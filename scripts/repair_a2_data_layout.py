@@ -13,10 +13,8 @@ values.  No operation or routing semantics are changed.
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import re
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -25,32 +23,25 @@ def dfg_pointers(xml_path: Path) -> list[tuple[str, int]]:
     # DFG document (two top-level elements).  Parse it as a fragment rather
     # than discarding the header or assuming a conventional single root.
     text = xml_path.read_text()
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
-        root = ET.fromstring(f"<MorpherDFGFragment>{text}</MorpherDFGFragment>")
+    # Some generated files contain legacy unescaped operation text and are
+    # not XML-well-formed even though the pointer tags themselves are.  The
+    # native parser accepts these files, so extract only the stable pointer
+    # contract with a strict tag regex.
     out: dict[str, int] = {}
-    # Morpher emits both attribute and text forms in different DFG versions.
-    for elem in root.iter():
-        if elem.tag.split("}")[-1] != "BasePointerName":
-            continue
-        name = (elem.text or elem.attrib.get("name") or "").strip()
+    for m in re.finditer(r"<BasePointerName\b([^>]*)>([^<]*)</BasePointerName>", text):
+        attrs, raw_name = m.groups()
+        name = raw_name.strip()
         if not name:
             continue
-        try:
-            size = int(elem.attrib.get("size", "1"))
-        except ValueError:
-            size = 1
-        out[name] = max(1, size)
-    # Also accept an attribute on the operation node used by older exports.
-    for elem in root.iter():
-        name = elem.attrib.get("BasePointerName") or elem.attrib.get("base_pointer_name")
-        if name:
-            try:
-                size = int(elem.attrib.get("size", "1"))
-            except ValueError:
-                size = 1
-            out[name] = max(out.get(name, 1), size)
+        sm = re.search(r"\bsize=\"(\d+)\"", attrs)
+        size = int(sm.group(1)) if sm else 1
+        out[name] = max(out.get(name, 1), size)
+    # Also accept an attribute on an operation node used by older exports.
+    for m in re.finditer(r"(?:BasePointerName|base_pointer_name)=\"([^\"]+)\"([^>]*)", text):
+        name, attrs = m.groups()
+        sm = re.search(r"\bsize=\"(\d+)\"", attrs)
+        size = int(sm.group(1)) if sm else 1
+        out[name] = max(out.get(name, 1), size)
     return sorted(out.items())
 
 
