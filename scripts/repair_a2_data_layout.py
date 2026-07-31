@@ -21,7 +21,14 @@ from pathlib import Path
 
 
 def dfg_pointers(xml_path: Path) -> list[tuple[str, int]]:
-    root = ET.parse(xml_path).getroot()
+    # Morpher's XML exporter writes a small MutexBB header followed by the
+    # DFG document (two top-level elements).  Parse it as a fragment rather
+    # than discarding the header or assuming a conventional single root.
+    text = xml_path.read_text()
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        root = ET.fromstring(f"<MorpherDFGFragment>{text}</MorpherDFGFragment>")
     out: dict[str, int] = {}
     # Morpher emits both attribute and text forms in different DFG versions.
     for elem in root.iter():
