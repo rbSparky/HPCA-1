@@ -136,6 +136,10 @@ def main() -> int:
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--include-a3", action="store_true")
     parser.add_argument("--kernels", default=",".join(KERNELS), help="comma-separated frozen kernel subset")
+    parser.add_argument(
+        "--architectures",
+        help="comma-separated architecture subset (defaults to all core, or core+A3 with --include-a3)",
+    )
     parser.add_argument("--delta", type=int)
     parser.add_argument("--native-only", action="store_true")
     args = parser.parse_args()
@@ -149,7 +153,15 @@ def main() -> int:
     selected_kernels = tuple(value.strip() for value in args.kernels.split(",") if value.strip())
     if any(value not in KERNELS for value in selected_kernels):
         raise SystemExit(f"unknown kernel in --kernels: {selected_kernels}")
-    arches = ARCHES_ALL if args.include_a3 else ARCHES_CORE
+    if args.architectures:
+        arches = tuple(value.strip() for value in args.architectures.split(",") if value.strip())
+        unknown_arches = sorted(set(arches) - set(ARCHES_ALL))
+        if unknown_arches:
+            raise SystemExit(f"unknown architecture in --architectures: {unknown_arches}")
+        if not args.include_a3 and "A3_hycube8x8" in arches:
+            raise SystemExit("--architectures includes A3; pass --include-a3 explicitly")
+    else:
+        arches = ARCHES_ALL if args.include_a3 else ARCHES_CORE
     jobs: list[dict[str, object]] = []
     for kernel in selected_kernels:
         native_dfg = native_root / "dfg" / f"{kernel}.xml"
